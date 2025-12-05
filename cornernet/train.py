@@ -100,7 +100,8 @@ def main():
     logger = create_logger(cfg.local_rank, save_dir=cfg.log_dir)
 
     print = logger.info
-
+    if "LOCAL_RANK" in os.environ:
+        cfg.local_rank = int(os.environ["LOCAL_RANK"])
     print(cfg)
 
     torch.manual_seed(317)
