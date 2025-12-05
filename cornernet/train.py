@@ -324,5 +324,7 @@ class DisablePrint:
 
 
 if __name__ == '__main__':
+    import cv2
+    cv2.setNumThreads(0)
     with DisablePrint(local_rank=cfg.local_rank):
         main()
