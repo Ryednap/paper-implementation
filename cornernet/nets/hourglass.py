@@ -300,7 +300,7 @@ class exkp(nn.Module):
                 outs.append([hmap_tl, hmap_br, embd_tl, embd_br, regs_tl, regs_br])
 
             if i < self.nstack - 1:
-                inter = self.inters_[i](inter) + self._cnvs[i](cnv)
+                inter = self.inters_[i](inter) + self.cnvs_[i](cnv)
                 inter = self.relu(inter)
                 inter = self.inters[i](inter)
 
