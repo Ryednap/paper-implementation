@@ -1,0 +1,87 @@
+# directories
+data/
+venv/
+ckpt/
+logs/
+
+# ------------------------------------
+# Python
+# ------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+*.swp
+*.tmp
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Packaging / distribution
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Jupyter
+.ipynb_checkpoints/
+
+# pytest / coverage
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+
+# ------------------------------------
+# C / C++ Extension Build Artifacts
+# (DO NOT ignore source files!)
+# ------------------------------------
+
+# Compiled shared libs
+*.so
+*.pyd
+*.dll
+*.dylib
+
+# Object / static library files
+*.o
+*.obj
+*.a
+*.lib
+*.lo
+*.la
+
+# CMake / Make / Ninja build dirs
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+makefile
+*.ninja
+.ninja_deps
+.ninja_log
+
+# Common build directories
+build/
+_build/
+out/
+tmp/
+
+# ------------------------------------
+# IDE / Editor
+# ------------------------------------
+.vscode/
+.idea/
+*.iml
+
+# OS junk
+.DS_Store
+Thumbs.db
