@@ -1,6 +1,6 @@
 import cv2
-import random
 import numpy as np
+import random
 
 
 def grayscale(image):
@@ -10,10 +10,9 @@ def grayscale(image):
 def normalize_(image, mean, std):
     image -= mean
     image /= std
-    return image
 
 
-def lightning_(data_rng, image, alphastd, eigval, eigvec):
+def lighting_(data_rng, image, alphastd, eigval, eigvec):
     alpha = data_rng.normal(scale=alphastd, size=(3,))
     image += np.dot(eigvec, eigval * alpha)
 
@@ -29,34 +28,32 @@ def saturation_(data_rng, image, gs, gs_mean, var):
     blend_(alpha, image, gs[:, :, None])
 
 
-def contrast_(data_rng, image, gs, gs_mean, var):
-    alpha = 1.0 + data_rng.uniform(low=-var, high=var)
-    blend_(alpha, image, gs_mean)
-
-
 def brightness_(data_rng, image, gs, gs_mean, var):
     alpha = 1.0 + data_rng.uniform(low=-var, high=var)
     image *= alpha
 
 
-def color_jitterning_(data_rng, image):
+def contrast_(data_rng, image, gs, gs_mean, var):
+    alpha = 1.0 + data_rng.uniform(low=-var, high=var)
+    blend_(alpha, image, gs_mean)
+
+
+def color_jittering_(data_rng, image):
     functions = [brightness_, contrast_, saturation_]
     random.shuffle(functions)
 
     gs = grayscale(image)
     gs_mean = gs.mean()
     for f in functions:
-        f(data_rng, image, gs, gs_mean, var=0.4)
+        f(data_rng, image, gs, gs_mean, 0.4)
 
 
 def crop_image(image, center, new_size):
     cty, ctx = center
     height, width = new_size
     im_height, im_width = image.shape[0:2]
-
     cropped_image = np.zeros((height, width, 3), dtype=image.dtype)
 
-    # These four coodinates are in original image frame.
     x0, x1 = max(0, ctx - width // 2), min(ctx + width // 2, im_width)
     y0, y1 = max(0, cty - height // 2), min(cty + height // 2, im_height)
 
@@ -65,7 +62,7 @@ def crop_image(image, center, new_size):
 
     cropped_cty, cropped_ctx = height // 2, width // 2
     y_slice = slice(cropped_cty - top, cropped_cty + bottom)
-    x_slice = slice(cropped_ctx - left, cropped_cty + right)
+    x_slice = slice(cropped_ctx - left, cropped_ctx + right)
     cropped_image[y_slice, x_slice, :] = image[y0:y1, x0:x1, :]
 
     border = np.array(
@@ -79,14 +76,13 @@ def crop_image(image, center, new_size):
     )
 
     offset = np.array([cty - height // 2, ctx - width // 2])
+
     return cropped_image, border, offset
 
 
 def _get_border(border, size):
-    # Get border where the 2 * border is smaller than the image such that we can
-    # put some image content.
     i = 1
-    while size // 2 <= border // i:
+    while size - border // i <= border // i:
         i *= 2
     return border // i
 
@@ -95,23 +91,20 @@ def random_crop(image, detections, random_scales, new_size, padding):
     new_height, new_width = new_size["h"], new_size["w"]
     image_height, image_width = image.shape[0:2]
 
-    # Choose a random scale
     scale = np.random.choice(random_scales)
     new_height = int(new_height * scale)
     new_width = int(new_width * scale)
 
     cropped_image = np.zeros((new_height, new_width, 3), dtype=image.dtype)
 
-    # get valid borders after accounting for padding
     w_border = _get_border(padding, image_width)
     h_border = _get_border(padding, image_height)
 
-    # Choose a random center point within the border bound
-    # everything left of w_border and right of image_width - w_border is to be padded.
+    # choose a random center point
     center_x = np.random.randint(low=w_border, high=image_width - w_border)
     center_y = np.random.randint(low=h_border, high=image_height - h_border)
 
-    # Get the four coordinates in cropped_image according to this center point
+    # get the four coordinates according to this center point
     left, right = max(center_x - new_width // 2, 0), min(
         center_x + new_width // 2, image_width
     )
@@ -128,6 +121,7 @@ def random_crop(image, detections, random_scales, new_size, padding):
     y_slice = slice(cropped_center_y - top_h, cropped_center_y + bottom_h)
     cropped_image[y_slice, x_slice, :] = image[bottom:top, left:right, :]
 
+    # crop detections
     cropped_detections = detections.copy()
     cropped_detections[:, 0::2] -= left
     cropped_detections[:, 1::2] -= bottom
@@ -137,28 +131,21 @@ def random_crop(image, detections, random_scales, new_size, padding):
     return cropped_image, cropped_detections
 
 
-def gaussian_2d(shape, sigma=1):
+def gaussian2D(shape, sigma=1):
+    m, n = [(ss - 1.0) / 2.0 for ss in shape]
+    y, x = np.ogrid[-m : m + 1, -n : n + 1]
 
-    ksy, ksx = shape
-
-    center_offset_y, center_offset_x = ksy // 2, ksx // 2
-
-    yy, xx = np.meshgrid(
-        np.arange(ksy) - center_offset_y, np.arange(ksx) - center_offset_x
-    )
-
-    h = np.exp(-(xx**2 + yy**2) / 2 * sigma**2)
+    h = np.exp(-(x * x + y * y) / (2 * sigma * sigma))
     h[h < np.finfo(h.dtype).eps * h.max()] = 0
     return h
 
 
-
-
 def draw_gaussian(heatmap, center, radius, k=1):
     diameter = 2 * radius + 1
-    gaussian = gaussian_2d((diameter, diameter), sigma=diameter / 6)
+    gaussian = gaussian2D((diameter, diameter), sigma=diameter / 6)
 
     x, y = center
+
     height, width = heatmap.shape[0:2]
 
     left, right = min(x, radius), min(width - x, radius + 1)
@@ -168,8 +155,6 @@ def draw_gaussian(heatmap, center, radius, k=1):
     masked_gaussian = gaussian[
         radius - top : radius + bottom, radius - left : radius + right
     ]
-
-    # print(masked_heatmap.shape, masked_gaussian.shape)
     np.maximum(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
 
 

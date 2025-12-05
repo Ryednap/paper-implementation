@@ -4,6 +4,7 @@ import sys
 import time
 import argparse
 from datetime import datetime
+from Cython import warn
 import numpy as np
 import torch
 import torch.nn as nn
@@ -11,12 +12,15 @@ from torch.utils.data import DataLoader, Dataset
 import torch.distributed as dist
 import torch.utils.data.distributed
 import nms
+import warnings
 
 from datasets.coco import COCO, COCO_eval
 from nets.hourglass import get_hourglass
 from utils.losses import _neg_loss, _embedding_loss, _reg_loss, Loss
 from utils.keypoint import _decode, _rescale_dets, _transpose_and_gather_feat
 from utils.utils import count_parameters
+
+warnings.filterwarnings(action="ignore", message="An output with one or more elements was resized")
 
 parser = argparse.ArgumentParser(description="cornernet")
 
@@ -220,7 +224,7 @@ def main():
                     + " (%d samples/sec)"
                     % (cfg.batch_size * cfg.log_interval / duration)
                 )
-            return
+        return
 
     def val_map(epoch):
         print("\n%s Val@Epoch: %d" % (datetime.now(), epoch))
@@ -234,7 +238,7 @@ def main():
                 detections = []
                 for scale in inputs:
                     inputs[scale]["image"] = inputs[scale]["image"].to(cfg.device)
-                    output = model(inputs[scale["image"]][-1])
+                    output = model(inputs[scale]['image'])[-1]
                     det = _decode(*output, ae_threshold=0.5, K=100, kernel=3)
                     det = det.reshape(det.shape[0], -1, 8).detach().cpu().numpy()
                     if det.shape[0] == 2:

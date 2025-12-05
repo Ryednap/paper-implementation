@@ -41,7 +41,7 @@ class pool(nn.Module):
         pool1 = self.pool1(p1_conv1)
 
         # pool2
-        p2_conv1 = self.p2_conv1(1)
+        p2_conv1 = self.p2_conv1(x)
         pool2 = self.pool2(p2_conv1)
 
         # pool1 + pool2
@@ -127,16 +127,16 @@ class residual(nn.Module):
 
 
 # inp_dim -> out_dim -> ..... -> out_dim
-def make_layer(k: int, inp_dim: int, out_dim: int, modules: int, layer, **kwargs):
-    layers = [layer(k, inp_dim, out_dim, **kwargs)]
-    layers += [layer(k, out_dim, out_dim, **kwargs) for _ in range(1, modules)]
+def make_layer(k: int, inp_dim: int, out_dim: int, modules: int, layer, stride=1):
+    layers = [layer(k, inp_dim, out_dim, stride=stride)]
+    layers += [layer(k, out_dim, out_dim) for _ in range(modules - 1)]
     return nn.Sequential(*layers)
 
 
 # inp_dim -> inp_dim -> ..... -> out_dim
-def make_layer_revr(k: int, inp_dim: int, out_dim: int, modules: int, layer, **kwargs):
-    layers = [layer(k, inp_dim, inp_dim, **kwargs) for _ in range(modules - 1)]
-    layers.append(layer(k, inp_dim, out_dim, **kwargs))
+def make_layer_revr(k: int, inp_dim: int, out_dim: int, modules: int, layer):
+    layers = [layer(k, inp_dim, inp_dim) for _ in range(modules - 1)]
+    layers.append(layer(k, inp_dim, out_dim))
     return nn.Sequential(*layers)
 
 
@@ -290,8 +290,8 @@ class exkp(nn.Module):
             cnv = self.cnvs[i](kp)  # (B, cnv_dim, H//2, W//2)
 
             if self.training or i == self.nstack - 1:
-                cnv_tl = self.cnv_tls[i](cnv)
-                cnv_br = self.cnv_br[i](cnv)
+                cnv_tl = self.cnvs_tl[i](cnv)
+                cnv_br = self.cnvs_br[i](cnv)
 
                 hmap_tl, hmap_br = self.hmap_tl[i](cnv_tl), self.hmap_br[i](cnv_br)
                 embd_tl, embd_br = self.embd_tl[i](cnv_tl), self.embd_br[i](cnv_br)

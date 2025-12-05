@@ -19,8 +19,8 @@ from utils.image import (
     gaussian_radius,
     random_crop,
     crop_image,
-    color_jitterning_,
-    lightning_,
+    color_jittering_,
+    lighting_,
     draw_gaussian,
 )
 
@@ -66,7 +66,7 @@ class COCO(Dataset):
     ):
         super().__init__()
 
-        data_dir =Path(data_dir)
+        data_dir = Path(data_dir)
         self.data_dir = data_dir
         self.img_dir = data_dir / "images" / f"{split}2014"
         self.annot_path = data_dir / "annotations" / f"instances_{split}2014.json"
@@ -180,8 +180,8 @@ class COCO(Dataset):
 
         # randomly change color and lighting
         if self.split == "train":
-            color_jitterning_(self.data_rng, image)
-            lightning_(self.data_rng, image, 0.1, self.eig_val, self.eig_vec)
+            color_jittering_(self.data_rng, image)
+            lighting_(self.data_rng, image, 0.1, self.eig_val, self.eig_vec)
 
         image -= self.mean
         image /= self.std
@@ -265,7 +265,7 @@ class COCO_eval(COCO):
     ):
         super().__init__(data_dir, split, gaussian=False)
 
-        self.test_scales = (test_scales,)
+        self.test_scales = test_scales
         self.test_flip = test_flip
 
     def __getitem__(self, index):
@@ -356,12 +356,12 @@ class COCO_eval(COCO):
             result_json = os.path.join(save_dir, "results.json")
             json.dump(detections, open(result_json, "w"))
 
-            coco_dets = self.coco.loadRes(detections)
-            coco_eval = COCOeval(self.coco, coco_dets, "bbox")
-            coco_eval.evaluate()
-            coco_eval.accumulate()
-            coco_eval.summarize()
-            return coco_eval.stats
+        coco_dets = self.coco.loadRes(detections)
+        coco_eval = COCOeval(self.coco, coco_dets, "bbox")
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        coco_eval.summarize()
+        return coco_eval.stats
 
     @staticmethod
     def collate_fn(batch):
@@ -383,3 +383,4 @@ class COCO_eval(COCO):
                     },
                 )
             )
+        return out
