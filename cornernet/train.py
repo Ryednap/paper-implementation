@@ -299,8 +299,27 @@ def main():
         
         print(saver.save(model.state_dict(), "checkpoint"))
         lr_scheduler.step(epoch)
-    
+
+
+class DisablePrint:
+  def __init__(self, local_rank=0):
+    self.local_rank = local_rank
+
+  def __enter__(self):
+    if self.local_rank != 0:
+      self._original_stdout = sys.stdout
+      sys.stdout = open(os.devnull, 'w')
+    else:
+      pass
+
+  def __exit__(self, exc_type, exc_val, exc_tb):
+    if self.local_rank != 0:
+      sys.stdout.close()
+      sys.stdout = self._original_stdout
+    else:
+      pass
 
 
 if __name__ == '__main__':
-    main()
+    with DisablePrint(local_rank=cfg.local_rank):
+        main()
