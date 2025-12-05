@@ -141,6 +141,7 @@ def main():
         pin_memory=True,
         drop_last=True,
         sampler=train_sampler if cfg.dist else None,
+        prefetch_factor=2
     )
 
     Dataset_eval = COCO_eval
@@ -149,9 +150,10 @@ def main():
         val_dataset,
         batch_size=1,
         shuffle=False,
-        num_workers=1,
+        num_workers=2,
         pin_memory=True,
         collate_fn=val_dataset.collate_fn,
+        prefetch_factor=2
     )
 
     print("Creating model...")
