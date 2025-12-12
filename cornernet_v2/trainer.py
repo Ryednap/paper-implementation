@@ -186,13 +186,16 @@ class Validator:
 
     def validate(self, epoch: int, model: nn.Module, val_loader: DataLoader):
         results = {}
+        model.eval()
         for image_id, input_dict in val_loader:
             detections = []
             for scale, d in input_dict.items():
                 # Note that image can be batches
                 # of test time augmentations.
                 image = d["image"]
-                out_dict = model({"image": image})
+                with torch.no_grad():
+                    result = model({"image": image})
+                    out_dict = result["outputs"][-1]
                 det = self.decode(
                     out_dict["tl_hmap"],
                     out_dict["br_hmap"],
@@ -299,9 +302,7 @@ class Trainer:
         val_loader: DataLoader,
     ):
 
-        self.validator.validate(
-            1, model, val_loader
-        )
+        # self.validator.validate(1, model, val_loader)
         for epoch in range(self.cfg.num_epochs):
             set_seed(self.cfg.seed + epoch + self.fabric.local_rank)
 
@@ -375,5 +376,5 @@ class Trainer:
                     loss_dict["reg_loss"].item(),
                     optimizer.param_groups[0]["lr"],
                 )
-            
+
             self._total_steps += 1

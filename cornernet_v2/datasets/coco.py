@@ -43,6 +43,7 @@ def _get_data_list(data_dir: Path, split: Literal["train", "val", "test"]):
 
         data_list.append(
             {
+                "image_id": img_id,
                 "image": image_path.as_posix(),
                 "bboxes": bboxes,
                 "labels": labels,
@@ -475,7 +476,7 @@ class CocoValDataset(Dataset):
             target_image /= self._std[:, None, None]
 
             out_dict[scale] = {
-                "image": target_image[None, ...],
+                "image": target_image,
                 "border": border,
                 "original_size": (scaled_height, scaled_width),
                 "fmap_size": (fmap_height, fmap_width),
@@ -484,4 +485,4 @@ class CocoValDataset(Dataset):
                 "labels": data["labels"],
             }
 
-        return out_dict
+        return data["image_id"], out_dict
