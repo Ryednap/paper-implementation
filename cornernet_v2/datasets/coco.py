@@ -130,6 +130,7 @@ def get_train_transform(
                 min_fg_label=0,
                 ellipse_mask=True,
             ),
+            mt.ToDeviced(keys=["box_mask"], device=device),
             mt.RandSpatialCropd(
                 keys=[image_key, "box_mask"],
                 roi_size=cfg.train_patch_size,
