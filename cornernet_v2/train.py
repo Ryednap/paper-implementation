@@ -41,6 +41,8 @@ def train(fabric: Fabric, cfg: Config, disable_tqdm: bool, num_workers: int):
         batch_size=cfg.batch_size,
         shuffle=True,
         num_workers=num_workers,
+        drop_last=True,
+        pin_memory=True,
     )
     val_loader = DataLoader(
         dataset=val_dset,
