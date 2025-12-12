@@ -310,7 +310,6 @@ class Trainer:
         val_loader: DataLoader,
     ):
 
-        self.validator.validate(1, model, val_loader)
         for epoch in range(self.cfg.num_epochs):
             set_seed(self.cfg.seed + epoch + self.fabric.local_rank)
 
