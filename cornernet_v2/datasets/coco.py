@@ -120,7 +120,7 @@ def get_train_transform(
 ):
     train_transforms = mt.Compose(
         [
-            mt.ToDeviced(keys=[image_key, box_key, label_key], device=device),
+            # mt.ToDeviced(keys=[image_key, box_key, label_key], device=device),
             _get_intensity_transform(image_key),
             mt_det.BoxToMaskd(
                 box_keys=box_key,
@@ -130,7 +130,6 @@ def get_train_transform(
                 min_fg_label=0,
                 ellipse_mask=True,
             ),
-            mt.ToDeviced(keys=["box_mask"], device=device),
             mt.RandSpatialCropd(
                 keys=[image_key, "box_mask"],
                 roi_size=cfg.train_patch_size,
@@ -191,7 +190,7 @@ def get_train_transform(
 class CocoTrainDataset(Dataset):
     def __init__(self, cfg: Config, device: torch.device):
         self.cfg = cfg
-        self.device = device
+        self.device = "cpu" # This is forced as I want to use multi-worker
         md.set_track_meta(False)
 
         train_data_list = _get_data_list(cfg.data_dir, "train")
