@@ -191,6 +191,7 @@ class CocoTrainDataset(Dataset):
     def __init__(self, cfg: Config, device: torch.device):
         self.cfg = cfg
         self.device = device
+        md.set_track_meta(False)
 
         train_data_list = _get_data_list(cfg.data_dir, "train")
         ds = md.CacheDataset(
@@ -202,18 +203,19 @@ class CocoTrainDataset(Dataset):
                         image_only=False,
                         converter=lambda x: x.convert("RGB"),
                     ),
-                    mt.EnsureChannelFirstd(keys=["image"]),
+                    # mt.EnsureChannelFirstd(keys=["image"]),
                     mt.EnsureTyped(keys=["image", "bboxes"], dtype=torch.float32),
                     mt.EnsureTyped(keys=["labels"], dtype=torch.long),
                     mt.Lambdad(keys="image", func=lambda x: x / 255.0),
+                    mt.Lambdad(keys="image", func=lambda x: x.permute(2, 0, 1)),
+                    mt_det.StandardizeEmptyBoxd(
+                        box_keys=["bboxes"],
+                        box_ref_image_keys="image",
+                    ),
                     mt_det.ConvertBoxModed(
                         box_keys="bboxes",
                         src_mode="xywh",
                         dst_mode="xyxy",
-                    ),
-                    mt_det.StandardizeEmptyBoxd(
-                        box_keys=["bboxes"],
-                        box_ref_image_keys="image",
                     ),
                 ]
             ),
