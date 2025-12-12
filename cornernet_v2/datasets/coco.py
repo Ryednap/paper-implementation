@@ -447,8 +447,11 @@ class CocoValDataset(Dataset):
         data = self.data_list[index]
 
         image = cast(np.ndarray, cv2.imread(data["image"], cv2.IMREAD_COLOR))
-
-        height, width = image.shape[0:2]
+        try:
+            height, width = image.shape[0:2]
+        except:
+            print(data["image"])
+            raise
 
         out_dict = {}
 
@@ -478,11 +481,15 @@ class CocoValDataset(Dataset):
             out_dict[scale] = {
                 "image": target_image,
                 "border": border,
-                "original_size": (scaled_height, scaled_width),
-                "fmap_size": (fmap_height, fmap_width),
-                "ratio": (fmap_height / target_height, fmap_width / target_width),
-                "bboxes": data["bboxes"],
-                "labels": data["labels"],
+                "original_size": torch.Tensor((scaled_height, scaled_width)).to(
+                    device=self.device, dtype=torch.float32
+                ),
+                "fmap_size": torch.Tensor((fmap_height, fmap_width)).to(
+                    device=self.device, dtype=torch.float32
+                ),
+                "ratio": torch.Tensor(
+                    [fmap_height / target_height, fmap_width / target_width]
+                ).to(device=self.device, dtype=torch.float32),
             }
 
         return data["image_id"], out_dict

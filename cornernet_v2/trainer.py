@@ -1,4 +1,6 @@
+from gc import disable
 import logging
+import time
 from matplotlib.transforms import BboxBase
 import numpy as np
 import orjson
@@ -57,9 +59,10 @@ def convert_to_coco_eval_format(all_bboxes: Dict[str, Dict[int, np.ndarray]]):
 
 
 class Validator:
-    def __init__(self, cfg: Config, logger: logging.Logger):
+    def __init__(self, cfg: Config, logger: logging.Logger, disable_tqdm: bool = False):
         self.cfg = cfg
         self.logger = logger
+        self.disable_tqdm = disable_tqdm
         annotation_dir = cfg.data_dir / "annotations" / f"instances_val2014.json"
         self._coco = COCO(annotation_file=annotation_dir)
 
@@ -96,7 +99,7 @@ class Validator:
         tl_regs = transpose_and_gather_feat(tl_regs, ind=tl_inds)
         br_regs = transpose_and_gather_feat(br_regs, ind=br_inds)
         tl_embd = transpose_and_gather_feat(tl_embd, ind=tl_inds)
-        br_embd = transpose_and_gather_feat(br_embd, ind=br_embd)
+        br_embd = transpose_and_gather_feat(br_embd, ind=br_inds)
 
         tl_regs.view(B, topk_k, 1, 2)
         br_regs.view(B, 1, topk_k, 2)
@@ -167,6 +170,7 @@ class Validator:
         borders: torch.Tensor,
         original_sizes: torch.Tensor,
     ):
+
         xs, ys = bboxes[..., 0:4:2], bboxes[..., 1:4:2]
         xs /= ratios[:, 1][:, None, None]
         ys /= ratios[:, 0][:, None, None]
@@ -175,8 +179,8 @@ class Validator:
         xs -= borders[:, 2][:, None, None]
         ys -= borders[:, 0][:, None, None]
 
-        xs = xs.clamp(min=0, max=original_sizes[:, 1][:, None, None])
-        ys = ys.clamp(min=0, max=original_sizes[:, 0][:, None, None])
+        xs = xs.clamp(min=0.0).clamp(max=original_sizes[:, 1][:, None, None])
+        ys = ys.clamp(min=0.0).clamp(max=original_sizes[:, 0][:, None, None])
 
         out = bboxes.clone()
         out[..., 0:4:2] = xs
@@ -187,7 +191,9 @@ class Validator:
     def validate(self, epoch: int, model: nn.Module, val_loader: DataLoader):
         results = {}
         model.eval()
-        for image_id, input_dict in val_loader:
+        for image_id, input_dict in tqdm(
+            val_loader, desc=f"Epoch-{epoch} Validating...."
+        ):
             detections = []
             for scale, d in input_dict.items():
                 # Note that image can be batches
@@ -196,6 +202,7 @@ class Validator:
                 with torch.no_grad():
                     result = model({"image": image})
                     out_dict = result["outputs"][-1]
+
                 det = self.decode(
                     out_dict["tl_hmap"],
                     out_dict["br_hmap"],
@@ -217,19 +224,18 @@ class Validator:
                 bboxes /= scale
 
                 scores = det["scores"]
+                tl_scores = det["scores"]
+                br_scores = det["br_scores"]
                 classes = det["classes"]
 
-                # filter by negative score
-                score_filter = scores > -1
-                bboxes = bboxes[score_filter].view(1, -1, 4)[0]
-                classes = classes[score_filter].view(1, -1, 1)[0]
-                scores = scores[score_filter].view(1, -1, 1)[0]
+                det = torch.cat([bboxes, scores, tl_scores, br_scores, classes], dim=-1)
+                det = det.reshape(1, -1, 8)
+                detections.append(det)
 
-                # [num_dets, 6] with first 4 being bboxes and then scores, classes
-                detections.append(torch.stack([bboxes, scores, classes], dim=-1))
-
-            combined_det = torch.concatenate(detections, dim=0).cpu().numpy()
-            combined_classes = combined_det[..., 5]
+            combined_det = torch.concatenate(detections, dim=1)[0]
+            combined_det = combined_det[combined_det[:, 4] > -1]
+            combined_det = combined_det.cpu().numpy()
+            combined_classes = combined_det[..., -1]
 
             r = {}
             for j in range(self.cfg.num_classes):
@@ -241,6 +247,8 @@ class Validator:
                     method=2,
                     weight_exp=self.cfg.nms_gaussian_w_exp,
                 )
+                # only bboxes and scores
+                r[j + 1] = r[j + 1][:, 0:5]
 
             scores = np.hstack(
                 [r[j][:, -1] for j in range(1, self.cfg.num_classes + 1)]
@@ -253,8 +261,8 @@ class Validator:
                 kth = len(scores) - self.cfg.max_objs
                 thresh = np.partition(scores, kth=kth)[kth]
                 for j in range(1, self.cfg.num_classes + 1):
-                    keep_inds = r[j + 1][:, -1] >= thresh
-                    r[j + 1] = r[j][keep_inds]
+                    keep_inds = r[j][:, -1] >= thresh
+                    r[j] = r[j][keep_inds]
 
             results[image_id] = r
 
@@ -302,7 +310,7 @@ class Trainer:
         val_loader: DataLoader,
     ):
 
-        # self.validator.validate(1, model, val_loader)
+        self.validator.validate(1, model, val_loader)
         for epoch in range(self.cfg.num_epochs):
             set_seed(self.cfg.seed + epoch + self.fabric.local_rank)
 

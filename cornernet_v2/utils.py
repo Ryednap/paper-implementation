@@ -64,13 +64,15 @@ def transpose_and_gather_feat(feat: torch.Tensor, ind: torch.Tensor):
     return feat.gather(dim=1, index=ind)
 
 
-def topk(heatmap: torch.Tensor, k=20):
+def topk(score_map, k=20):
+    batch, cat, height, width = score_map.size()
 
-    B, C, H, W = heatmap.size()
+    topk_scores, topk_inds = torch.topk(score_map.view(batch, -1), k)
 
-    topk_scores, topk_inds = torch.topk(heatmap.view(B, -1), k=k)
-    topk_classes, topk_ys, topk_xs = torch.unravel_index(topk_inds, (C, H, W))
-
+    topk_classes = (topk_inds / (height * width)).int()
+    topk_inds = topk_inds % (height * width)
+    topk_ys = (topk_inds / width).int().float()
+    topk_xs = (topk_inds % width).int().float()
     return topk_scores, topk_inds, topk_classes, topk_ys, topk_xs
 
 
