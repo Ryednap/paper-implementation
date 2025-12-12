@@ -213,6 +213,7 @@ class CocoTrainDataset(Dataset):
                 device=device,
             ),
             cache_rate=cfg.train_cache_rate,
+            num_workers=None,
         )
 
         self._num_classes = len(COCO_NAMES) - 1
