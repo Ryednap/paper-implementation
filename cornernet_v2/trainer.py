@@ -359,13 +359,18 @@ class Trainer:
                 }
             )
 
-            self._total_steps += 1
-            if self.logging_frequency % self._total_steps == 0:
+            if self._total_steps % self.logging_frequency == 0:
                 self.logger.info(
-                    "Epoch %d/%d, Iteration %d, Loss: %.4f, LR: %.6f",
+                    "Epoch %d/%d, Iteration %d, Loss: %.4f, Focal Loss: %.4f, Push Loss: %.4f, Pull Loss: %.4f, Reg Loss: %.4f LR: %.6f",
                     epoch,
                     self.cfg.num_epochs,
                     self._total_steps,
                     loss.item(),
+                    loss_dict["focal_loss"].item(),
+                    loss_dict["push_loss"].item(),
+                    loss_dict["pull_loss"].item(),
+                    loss_dict["reg_loss"].item(),
                     optimizer.param_groups[0]["lr"],
                 )
+            
+            self._total_steps += 1
