@@ -193,6 +193,11 @@ class CocoTrainDataset(Dataset):
         self.device = "cpu"
         md.set_track_meta(False)
 
+        def ensure_channel(x):
+            if len(x.shape) == 2:
+                return x[None, :, :].expand(3, x.shape[0], x.shape[1])
+            return x.permute(2, 0, 1)
+
         train_data_list = _get_data_list(cfg.data_dir, "train")
         ds = md.CacheDataset(
             data=train_data_list,
@@ -201,7 +206,7 @@ class CocoTrainDataset(Dataset):
                     mt.LoadImaged(keys=["image"], image_only=False),
                     mt.EnsureTyped(keys=["image", "bboxes"], dtype=torch.float32),
                     mt.EnsureTyped(keys=["labels"], dtype=torch.long),
-                    mt.Lambdad(keys=["image"], func=lambda x: x.permute(2, 0, 1)),
+                    mt.Lambdad(keys=["image"], func=lambda x: ensure_channel(x)),
                     mt.Lambdad(keys="image", func=lambda x: x / 255.0),
                     mt_det.ConvertBoxModed(
                         box_keys="bboxes",
