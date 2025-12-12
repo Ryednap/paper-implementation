@@ -190,7 +190,7 @@ def get_train_transform(
 class CocoTrainDataset(Dataset):
     def __init__(self, cfg: Config, device: torch.device):
         self.cfg = cfg
-        self.device = "device"
+        self.device = device
 
         train_data_list = _get_data_list(cfg.data_dir, "train")
         ds = md.CacheDataset(
