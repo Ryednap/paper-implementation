@@ -198,7 +198,7 @@ class CocoTrainDataset(Dataset):
     def __init__(self, cfg: Config, device: torch.device):
         self.cfg = cfg
         self.device = device
-        md.set_track_meta(False)
+        # md.set_track_meta(False)
 
         train_data_list = _get_data_list(cfg.data_dir, "train")
         ds = md.CacheDataset(
