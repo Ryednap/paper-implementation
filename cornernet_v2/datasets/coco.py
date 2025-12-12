@@ -119,15 +119,6 @@ def get_train_transform(
     train_transforms = mt.Compose(
         [
             # mt.ToDeviced(keys=[image_key, box_key, label_key], device=device),
-            mt.Lambdad(keys=image_key, func=lambda x: x / 255.0),
-            mt_det.ConvertBoxModed(
-                box_keys=box_key,
-                src_mode="xywh",
-                dst_mode="xyxy",
-            ),
-            mt_det.StandardizeEmptyBoxd(
-                box_keys=[box_key], box_ref_image_keys=image_key
-            ),
             _get_intensity_transform(image_key),
             mt_det.BoxToMaskd(
                 box_keys=box_key,
@@ -198,7 +189,7 @@ class CocoTrainDataset(Dataset):
     def __init__(self, cfg: Config, device: torch.device):
         self.cfg = cfg
         self.device = "cpu"
-        # md.set_track_meta(False)
+        md.set_track_meta(False)
 
         train_data_list = _get_data_list(cfg.data_dir, "train")
         ds = md.CacheDataset(
@@ -206,16 +197,25 @@ class CocoTrainDataset(Dataset):
             transform=mt.Compose(
                 [
                     mt.LoadImaged(keys=["image"], image_only=False),
-                    mt.EnsureChannelFirstd(keys=["image"]),
+                    mt.Lambdad(keys=["image"], func=lambda x: x.permute(2, 0, 1)),
                     mt.EnsureTyped(keys=["image", "bboxes"], dtype=torch.float32),
                     mt.EnsureTyped(keys=["labels"], dtype=torch.long),
+                    mt.Lambdad(keys="image", func=lambda x: x / 255.0),
+                    mt_det.ConvertBoxModed(
+                        box_keys="bboxes",
+                        src_mode="xywh",
+                        dst_mode="xyxy",
+                    ),
+                    mt_det.StandardizeEmptyBoxd(
+                        box_keys=["bboxes"], box_ref_image_keys="image",
+                    ),
                 ]
             ),
             cache_rate=cfg.train_cache_rate,
             num_workers=None,
         )
         self.dataset = md.Dataset(
-            ds, # type: ignore
+            ds,  # type: ignore
             transform=get_train_transform(
                 cfg=cfg,
                 image_key="image",
