@@ -24,6 +24,8 @@ from ._coco_constants import (
     COCO_EIGEN_VECTORS,
 )
 
+cv2.setNumThreads(0)
+
 
 def _get_data_list(data_dir: Path, split: Literal["train", "val", "test"]):
     image_dir = data_dir / "images" / f"{split}2014"
@@ -197,9 +199,9 @@ class CocoTrainDataset(Dataset):
             transform=mt.Compose(
                 [
                     mt.LoadImaged(keys=["image"], image_only=False),
-                    mt.Lambdad(keys=["image"], func=lambda x: x.permute(2, 0, 1)),
                     mt.EnsureTyped(keys=["image", "bboxes"], dtype=torch.float32),
                     mt.EnsureTyped(keys=["labels"], dtype=torch.long),
+                    mt.Lambdad(keys=["image"], func=lambda x: x.permute(2, 0, 1)),
                     mt.Lambdad(keys="image", func=lambda x: x / 255.0),
                     mt_det.ConvertBoxModed(
                         box_keys="bboxes",
