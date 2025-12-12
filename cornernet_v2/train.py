@@ -40,7 +40,7 @@ def train(fabric: Fabric, cfg: Config, disable_tqdm: bool):
         dataset=train_dset,
         batch_size=cfg.batch_size,
         shuffle=True,
-        num_workers=0,
+        num_workers=8,
     )
     val_loader = DataLoader(
         dataset=val_dset,

@@ -118,7 +118,7 @@ def get_train_transform(
 ):
     train_transforms = mt.Compose(
         [
-            mt.ToDeviced(keys=[image_key, box_key, label_key], device=device),
+            # mt.ToDeviced(keys=[image_key, box_key, label_key], device=device),
             mt.Lambdad(keys=image_key, func=lambda x: x / 255.0),
             mt_det.ConvertBoxModed(
                 box_keys=box_key,
