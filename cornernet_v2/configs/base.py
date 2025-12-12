@@ -1,11 +1,12 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Sequence, Tuple
+from typing import Literal, Optional, Sequence, Tuple
 
 
 class Config:
     seed: int
     data_dir: Path
+    val_data_dir: Path
     eval_save_dir: Path
 
     precision: Literal["32-true", "16-mixed", "16-true", "bf16-mixed", "bf16-true"]
@@ -39,9 +40,10 @@ class Config:
 
 @dataclass(slots=True, kw_only=True)
 class BaseConfig(Config):
-    
+
     seed = 317
     data_dir = "./data"
+    val_data_dir = None
     eval_save_dir = "./eval"
 
     precision = "32-true"
@@ -70,4 +72,25 @@ class BaseConfig(Config):
     nstack = 1
     dims = [256, 256, 384, 384, 384, 512]
     num_modules = [2, 2, 2, 2, 2, 4]
+
+    def __post_init__(self):
+        if self.val_data_dir is None:
+            self.val_data_dir = self.data_dir
+
     
+    def to_dict(self):
+        """
+        Returns a dictionary of all config attributes (including inherited ones),
+        with their current values for this instance.
+        """
+        # Collect all attributes from the class and its parents
+        result = {}
+        for cls in self.__class__.__mro__:
+            if cls is object:
+                continue
+            for key, value in cls.__dict__.items():
+                if not key.startswith("_") and not callable(value):
+                    result[key] = getattr(self, key, value)
+        # Also include any instance attributes (in case of overrides)
+        result.update(self.__dict__)
+        return result

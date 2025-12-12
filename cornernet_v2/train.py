@@ -31,6 +31,8 @@ def train(fabric: Fabric, cfg: Config, disable_tqdm: bool):
     initialize_os_environ()
 
     logger = init_logger(name=__name__, is_rank_zero=fabric.is_global_zero)
+    logger.info("Config:\n\n%s\n\n", cfg.to_dict())
+    
     train_dset = CocoTrainDataset(cfg=cfg, device=fabric.device)
     val_dset = CocoValDataset(cfg=cfg, device=fabric.device)
 
@@ -50,8 +52,8 @@ def train(fabric: Fabric, cfg: Config, disable_tqdm: bool):
     train_loader, val_loader = fabric.setup_dataloaders(
         train_loader, val_loader, use_distributed_sampler=True
     )
-    
-    logger.info("Config:\n\n%s\n\n", asdict(cfg))
+
+
 
     model = CornerNet(
         n=cfg.n,
@@ -99,6 +101,7 @@ def train(fabric: Fabric, cfg: Config, disable_tqdm: bool):
     required=True,
 )
 @click.option("--data-dir", type=click.Path(exists=True), required=True)
+@click.option("--val-data-dir", type=click.Path(exists=True), required=False)
 @click.option("--eval-save-dir", type=click.Path(exists=True), required=True)
 @click.option("--seed", type=int, required=False)
 @click.option("--train-cache-rate", type=float, required=False)
@@ -109,12 +112,16 @@ def main(
     config: str,
     precision: str,
     data_dir: Path,
+    val_data_dir: Optional[Path],
     eval_save_dir: Path,
     seed: Optional[int],
     train_cache_rate: Optional[float],
     batch_size: Optional[int],
     lr: Optional[float],
 ):
+
+    if val_data_dir is None:
+        val_data_dir = data_dir
 
     if config == "coco-hg-small":
         from configs.coco_hourglass import CocoHourglassSmall
@@ -127,12 +134,12 @@ def main(
 
     else:
         raise ValueError("Unrecognized args")
-    
-    
+
     cfg.data_dir = Path(data_dir)
+    cfg.val_data_dir = Path(val_data_dir)
     cfg.eval_save_dir = Path(eval_save_dir)
     cfg.precision = precision
-    
+
     if seed is not None:
         cfg.seed = seed
     if train_cache_rate is not None:

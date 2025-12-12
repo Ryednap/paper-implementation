@@ -118,11 +118,8 @@ def get_train_transform(
 ):
     train_transforms = mt.Compose(
         [
-            mt.LoadImaged(keys=[image_key], image_only=False),
-            mt.EnsureChannelFirstd(keys=[image_key]),
+            mt.ToDeviced(keys=[image_key, box_key, label_key], device=device),
             mt.Lambdad(keys=image_key, func=lambda x: x / 255.0),
-            mt.EnsureTyped(keys=[image_key, box_key], dtype=torch.float32),
-            mt.EnsureTyped(keys=[label_key], dtype=torch.long),
             mt_det.ConvertBoxModed(
                 box_keys=box_key,
                 src_mode="xywh",
@@ -132,7 +129,6 @@ def get_train_transform(
                 box_keys=[box_key], box_ref_image_keys=image_key
             ),
             _get_intensity_transform(image_key),
-            mt.ToDeviced(keys=[image_key, box_key, label_key], device=device),
             mt_det.BoxToMaskd(
                 box_keys=box_key,
                 box_mask_keys="box_mask",
@@ -202,10 +198,24 @@ class CocoTrainDataset(Dataset):
     def __init__(self, cfg: Config, device: torch.device):
         self.cfg = cfg
         self.device = device
+        md.set_track_meta(False)
 
         train_data_list = _get_data_list(cfg.data_dir, "train")
-        self.dataset = md.CacheDataset(
+        ds = md.CacheDataset(
             data=train_data_list,
+            transform=mt.Compose(
+                [
+                    mt.LoadImaged(keys=["image"], image_only=False),
+                    mt.EnsureChannelFirstd(keys=["image"]),
+                    mt.EnsureTyped(keys=["image", "bboxes"], dtype=torch.float32),
+                    mt.EnsureTyped(keys=["labels"], dtype=torch.long),
+                ]
+            ),
+            cache_rate=cfg.train_cache_rate,
+            num_workers=None,
+        )
+        self.dataset = md.Dataset(
+            ds, # type: ignore
             transform=get_train_transform(
                 cfg=cfg,
                 image_key="image",
@@ -213,8 +223,6 @@ class CocoTrainDataset(Dataset):
                 label_key="labels",
                 device=device,
             ),
-            cache_rate=cfg.train_cache_rate,
-            num_workers=None,
         )
 
         self._num_classes = len(COCO_NAMES) - 1
@@ -435,7 +443,7 @@ class CocoValDataset(Dataset):
         self.device = device
         self.test_scales = cfg.test_scales
 
-        self.data_list = _get_data_list(cfg.data_dir, "val")
+        self.data_list = _get_data_list(cfg.val_data_dir, "val")
 
         self._mean = torch.tensor(COCO_MEAN, dtype=torch.float32, device=self.device)
         self._std = torch.tensor(COCO_STD, dtype=torch.float32, device=self.device)

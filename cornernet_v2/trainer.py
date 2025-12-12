@@ -63,7 +63,7 @@ class Validator:
         self.cfg = cfg
         self.logger = logger
         self.disable_tqdm = disable_tqdm
-        annotation_dir = cfg.data_dir / "annotations" / f"instances_val2014.json"
+        annotation_dir = cfg.val_data_dir / "annotations" / f"instances_val2014.json"
         self._coco = COCO(annotation_file=annotation_dir)
 
     @staticmethod
