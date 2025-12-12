@@ -335,6 +335,8 @@ class Trainer:
                         self._best_validation,
                     )
 
+            torch.cuda.empty_cache()
+
     def train_loop(
         self,
         epoch: int,

@@ -120,7 +120,7 @@ def get_train_transform(
 ):
     train_transforms = mt.Compose(
         [
-            # mt.ToDeviced(keys=[image_key, box_key, label_key], device=device),
+            mt.ToDeviced(keys=[image_key, box_key, label_key], device=device),
             _get_intensity_transform(image_key),
             mt_det.BoxToMaskd(
                 box_keys=box_key,
@@ -190,23 +190,21 @@ def get_train_transform(
 class CocoTrainDataset(Dataset):
     def __init__(self, cfg: Config, device: torch.device):
         self.cfg = cfg
-        self.device = "cpu"
-        md.set_track_meta(False)
-
-        def ensure_channel(x):
-            if len(x.shape) == 2:
-                return x[None, :, :].expand(3, x.shape[0], x.shape[1])
-            return x.permute(2, 0, 1)
+        self.device = "device"
 
         train_data_list = _get_data_list(cfg.data_dir, "train")
         ds = md.CacheDataset(
             data=train_data_list,
             transform=mt.Compose(
                 [
-                    mt.LoadImaged(keys=["image"], image_only=False),
+                    mt.LoadImaged(
+                        keys=["image"],
+                        image_only=False,
+                        converter=lambda x: x.convert("RGB"),
+                    ),
+                    mt.EnsureChannelFirstd(keys=["image"]),
                     mt.EnsureTyped(keys=["image", "bboxes"], dtype=torch.float32),
                     mt.EnsureTyped(keys=["labels"], dtype=torch.long),
-                    mt.Lambdad(keys=["image"], func=lambda x: ensure_channel(x)),
                     mt.Lambdad(keys="image", func=lambda x: x / 255.0),
                     mt_det.ConvertBoxModed(
                         box_keys="bboxes",
@@ -214,7 +212,8 @@ class CocoTrainDataset(Dataset):
                         dst_mode="xyxy",
                     ),
                     mt_det.StandardizeEmptyBoxd(
-                        box_keys=["bboxes"], box_ref_image_keys="image",
+                        box_keys=["bboxes"],
+                        box_ref_image_keys="image",
                     ),
                 ]
             ),

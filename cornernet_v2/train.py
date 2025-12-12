@@ -26,13 +26,13 @@ def initialize_os_environ():
     os.environ["TORCH_DISTRIBUTED_BACKEND"] = "nccl"
 
 
-def train(fabric: Fabric, cfg: Config, disable_tqdm: bool):
+def train(fabric: Fabric, cfg: Config, disable_tqdm: bool, num_workers: int):
     set_seed(cfg.seed)
     initialize_os_environ()
 
     logger = init_logger(name=__name__, is_rank_zero=fabric.is_global_zero)
     logger.info("Config:\n\n%s\n\n", cfg.to_dict())
-    
+
     train_dset = CocoTrainDataset(cfg=cfg, device=fabric.device)
     val_dset = CocoValDataset(cfg=cfg, device=fabric.device)
 
@@ -40,7 +40,7 @@ def train(fabric: Fabric, cfg: Config, disable_tqdm: bool):
         dataset=train_dset,
         batch_size=cfg.batch_size,
         shuffle=True,
-        num_workers=8,
+        num_workers=num_workers,
     )
     val_loader = DataLoader(
         dataset=val_dset,
@@ -52,8 +52,6 @@ def train(fabric: Fabric, cfg: Config, disable_tqdm: bool):
     train_loader, val_loader = fabric.setup_dataloaders(
         train_loader, val_loader, use_distributed_sampler=True
     )
-
-
 
     model = CornerNet(
         n=cfg.n,
@@ -107,6 +105,7 @@ def train(fabric: Fabric, cfg: Config, disable_tqdm: bool):
 @click.option("--train-cache-rate", type=float, required=False)
 @click.option("--batch-size", type=int, required=False)
 @click.option("--lr", type=float, required=False)
+@click.option("--num-workers", type=int, required=False, default=0)
 def main(
     disable_tqdm: bool,
     config: str,
@@ -118,6 +117,7 @@ def main(
     train_cache_rate: Optional[float],
     batch_size: Optional[int],
     lr: Optional[float],
+    num_workers: int,
 ):
 
     if val_data_dir is None:
@@ -156,7 +156,7 @@ def main(
         precision=cfg.precision,
     )
 
-    fabric.launch(train, cfg, disable_tqdm)  # type: ignore
+    fabric.launch(train, cfg, disable_tqdm, num_workers)  # type: ignore
 
 
 if __name__ == "__main__":
