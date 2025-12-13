@@ -1,10 +1,7 @@
-from concurrent.futures import ThreadPoolExecutor
 import math
-import os
 import cv2
 import numpy as np
 import pycocotools.coco as coco
-from pycocotools.cocoeval import COCOeval
 from pathlib import Path
 from typing import Literal, Mapping, Tuple, cast
 
@@ -275,7 +272,7 @@ class CocoTrainDataset(Dataset):
         sq3 = math.sqrt(b3**2 - 4 * a3 * c3)
         r3 = (b3 + sq3) / 2
 
-        return int(min(r1, r2, r3))
+        return max(0, int(min(r1, r2, r3)))
 
     @staticmethod
     def _gaussian_2d(shape: Tuple[int, int], sigma: float = 1.0):
@@ -315,8 +312,8 @@ class CocoTrainDataset(Dataset):
     def __getitem__(self, index):
         data = cast(Mapping, self.dataset[index])
         image = cast(torch.Tensor, data["image"])
-        bboxes = cast(torch.Tensor, data["bboxes"])
-        labels = cast(torch.Tensor, data["labels"])
+        bboxes = cast(torch.Tensor, data["bboxes"])  # [num_obj, 4]
+        labels = cast(torch.Tensor, data["labels"])  # [num_obj, 1]
 
         sorted_inds = torch.argsort(labels, dim=0)
         bboxes = bboxes[sorted_inds]
@@ -325,31 +322,19 @@ class CocoTrainDataset(Dataset):
         # top left features
         tl_hmap = torch.zeros(
             (self._num_classes, self._fmap_size["h"], self._fmap_size["w"]),
-            device=self.device,
         )
-        tl_regs = torch.zeros(
-            (self._max_objs, 2), dtype=torch.float32, device=self.device
-        )
-        tl_indices = torch.zeros(
-            (self._max_objs,), dtype=torch.int64, device=self.device
-        )
+        tl_regs = torch.zeros((self._max_objs, 2), dtype=torch.float32)
+        tl_indices = torch.zeros((self._max_objs,), dtype=torch.long)
 
         # bottom right features
         br_hmap = torch.zeros(
             (self._num_classes, self._fmap_size["h"], self._fmap_size["w"]),
-            device=self.device,
         )
-        br_regs = torch.zeros(
-            (self._max_objs, 2), dtype=torch.float32, device=self.device
-        )
-        br_indices = torch.zeros(
-            (self._max_objs,), dtype=torch.int64, device=self.device
-        )
+        br_regs = torch.zeros((self._max_objs, 2), dtype=torch.float32)
+        br_indices = torch.zeros((self._max_objs,), dtype=torch.long)
 
         # Marker masks to indicate valid objects out of max_objs
-        ind_masks = torch.zeros(
-            (self._max_objs,), dtype=torch.uint8, device=self.device
-        )
+        ind_masks = torch.zeros((self._max_objs,), dtype=torch.uint8)
         num_objs = min(bboxes.shape[0], self._max_objs)
         ind_masks[:num_objs] = 1
 
@@ -382,15 +367,13 @@ class CocoTrainDataset(Dataset):
                 tl_hmap[cls_id, tl_y_int, tl_x_int] = 1
                 br_hmap[cls_id, br_y_int, br_x_int] = 1
 
-            tl_regs[i] = torch.tensor(
+            tl_regs[i, :] = torch.tensor(
                 [tl_x - tl_x_int, tl_y - tl_y_int],
                 dtype=torch.float32,
-                device=self.device,
             )
-            br_regs[i] = torch.tensor(
+            br_regs[i, :] = torch.tensor(
                 [br_x - br_x_int, br_y - br_y_int],
                 dtype=torch.float32,
-                device=self.device,
             )
 
             # flattened indices which indicates the box position in feature map

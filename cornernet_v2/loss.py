@@ -12,6 +12,18 @@ _EMBD_DELTA = 1
 
 
 def _neg_loss(preds: List[torch.Tensor], target: torch.Tensor):
+    """
+    Compute Focal loss with negative weight decay for give list of Heatmaps.
+    The target is assumed to be a gaussian with a peak of 1 which is used to
+    weigh the negative predictions.
+
+    Args:
+        preds (list[torch.Tensor]): List of hmap predictions of same shape as target
+        target (torch.Tensor): Gausian target heatmap.
+    Returns:
+        The summed of loss from each item in preds across all batches.
+
+    """
     pos_inds = target == 1
     neg_inds = target < 1
 
@@ -41,13 +53,25 @@ def _embedding_loss(
     br_embd_list: List[torch.Tensor],
     valid_mask: torch.Tensor,
 ):
+    """
+    Compute associate embedding loss for given top-left and bottom-right embeddings.
+    The valid mask is to used to mask the loss only for relevant objects.
+    This version of the loss is refactored to be more similar to the paper formula.
+
+    Args:
+        tl_embd_list (list[torch.Tensor]): top left embeddings list as float
+        br_embd_list (list[torch.Tensor]): bottom right embeddings list as float
+        valid_mask (torch.Tensor): masking for valid objects out of num_objs as uint8.
+    Returns:
+        Tuple of pull and push loss summed across all batch and all items in list.
+    """
 
     num_objs = valid_mask.sum(dim=1, keepdim=True)  # [B, 1]
 
     pull_loss, push_loss = 0, 0
     for tl_embd, br_embd in zip(tl_embd_list, br_embd_list):
-        tl_embd = tl_embd.squeeze()
-        br_embd = br_embd.squeeze()
+        tl_embd = tl_embd.squeeze()  # [B, num_obj]
+        br_embd = br_embd.squeeze()  # [B, num_obj]
 
         mean_embd = (tl_embd + br_embd) / 2
 
@@ -78,10 +102,10 @@ def _regs_loss(
     regs: List[torch.Tensor], gt_reg: torch.Tensor, valid_mask: torch.Tensor
 ):
 
-    num_objs = valid_mask.float().sum()
+    num_objs = valid_mask.float().sum() + 1e-4
     mask = valid_mask[:, :, None].expand_as(gt_reg)
     loss = sum(
-        F.smooth_l1_loss(r[mask], gt_reg[mask], reduction="sum") / num_objs
+        F.smooth_l1_loss(r * mask, gt_reg * mask, reduction="sum") / num_objs
         for r in regs
     )
     return loss / len(regs)
@@ -91,6 +115,7 @@ class Loss(nn.Module):
     def forward(
         self, batch: Dict[str, torch.Tensor], output: List[Dict[str, torch.Tensor]]
     ):
+        # Output is list of feats from each stack (deep supervision).
         # Convert each [B, H, W, C] to [B, num_obj, C] where C=1 for embd and C=2 for regs
         # By gathering along spatial (H x W) dim with the flattened indices from gt
         tl_hmap = [x["tl_hmap"] for x in output]

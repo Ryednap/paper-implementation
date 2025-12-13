@@ -323,7 +323,7 @@ class Trainer:
                     or self._last_validation > self._best_validation
                 ):
                     self._best_validation = self._last_validation
-                    fname = f"epoch_{epoch}_mAP/mAP_{self._best_validation:%.5f}.pth"
+                    fname = f"epoch_{epoch}_mAP/mAP_{self._best_validation:.5f}.pth"
                     self.fabric.save(fname, state=model.state_dict())
                     self.logger.info(
                         f"Epoch: %d New Best :: %.5f", epoch, self._best_validation
