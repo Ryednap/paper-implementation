@@ -24,7 +24,7 @@ from ._coco_constants import (
     COCO_EIGEN_VECTORS,
 )
 
-cv2.setNumThreads(0)
+# cv2.setNumThreads(0)
 
 
 def _get_data_list(data_dir: Path, split: Literal["train", "val", "test"]):
