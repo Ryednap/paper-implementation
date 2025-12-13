@@ -18,6 +18,7 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 from joblib import Parallel, delayed
 
+from .serialize import TorchSerializedList
 from configs.base import Config
 from ._coco_constants import (
     COCO_NAMES,
@@ -28,7 +29,7 @@ from ._coco_constants import (
     COCO_EIGEN_VECTORS,
 )
 
-# cv2.setNumThreads(0)
+cv2.setNumThreads(0)
 
 
 def _get_data_list(data_dir: Path, split: Literal["train", "val", "test"]):
@@ -199,7 +200,7 @@ class CocoTrainDataset(Dataset):
 
         train_data_list = _get_data_list(cfg.data_dir, "train")
         ds = md.CacheDataset(
-            data=train_data_list,
+            data=TorchSerializedList(train_data_list),
             transform=mt.Compose(
                 [
                     mt.LoadImaged(
