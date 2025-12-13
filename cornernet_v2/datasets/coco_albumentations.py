@@ -23,6 +23,7 @@ from ._coco_constants import (
     COCO_EIGEN_VALUES,
     COCO_EIGEN_VECTORS,
 )
+from .serialize import TorchSerializedList
 
 cv2.setNumThreads(0)
 
@@ -52,14 +53,14 @@ def _get_data_list(data_dir: Path, split: Literal["train", "val", "test"]):
             }
         )
 
-    return data_list
+    return TorchSerializedList(data_list)
 
 
 def _get_train_transform(cfg: Config):
 
     def lightning_(image, alpha_std: float, rng=np.random):
         alpha = rng.normal(scale=alpha_std, size=(3,)).astype(np.float32)
-        eigvec = np.array(COCO_EIGEN_VECTORS).astype(np.float32)
+        eigvec = np.array(COCO_EIGEN_VALUES).astype(np.float32)
         eig_value = np.array(COCO_EIGEN_VECTORS).astype(np.float32)
 
         rgb_shift = (eigvec @ (eig_value + alpha)).astype(np.float32)
@@ -83,6 +84,7 @@ def _get_train_transform(cfg: Config):
                 p=1.0,
             ),
             A.Lambda(image=lightning_),
+            A.Normalize(mean=tuple(COCO_MEAN), std=tuple(COCO_STD)),
         ],
         bbox_params=A.BboxParams(
             format="coco",
@@ -97,11 +99,10 @@ def _get_train_transform(cfg: Config):
 class CocoTrainDataset(Dataset):
     def __init__(self, cfg: Config, device: torch.device):
         self.cfg = cfg
-        self.device = "cpu"  # This is forced as I want to use multi-worker
-        md.set_track_meta(False)
 
-        train_data_list = _get_data_list(cfg.data_dir, "train")
-        
+        self.data_list = _get_data_list(cfg.data_dir, "train")
+        self.transform = _get_train_transform(cfg=cfg)
+
         self._num_classes = len(COCO_NAMES) - 1
         self._max_objs = 128
         self._fmap_size = {
@@ -172,39 +173,40 @@ class CocoTrainDataset(Dataset):
 
     def __getitem__(self, index):
         data = self.data_list[index]
-        
-        image = cast(torch.Tensor, data["image"])
-        bboxes = cast(torch.Tensor, data["bboxes"])
-        labels = cast(torch.Tensor, data["labels"])
+
+        image = cv2.imread(data["image"], cv2.IMREAD_COLOR_RGB).astype(np.uint8)
+        bboxes = data["bboxes"]
+        labels = data["labels"]
+
+        augmented = self.transform(image=image, bboxes=bboxes, class_labels=labels)
+        image = torch.from_numpy(augmented["image"]).to(dtype=torch.float32)
+        bboxes = torch.from_numpy(augmented["bboxes"]).to(dtype=torch.float32)
+        labels = torch.from_numpy(augmented["class_labels"]).to(dtype=torch.long)
+
+        bboxes[:, 2:] += bboxes[:, :2]  # xywh -> xyxy
+
+        sorted_inds = torch.argsort(labels, dim=0)
+        bboxes = bboxes[sorted_inds]
+        labels = labels[sorted_inds]
 
         # top left features
         tl_hmap = torch.zeros(
             (self._num_classes, self._fmap_size["h"], self._fmap_size["w"]),
-            device=self.device,
+            dtype=torch.float32,
         )
-        tl_regs = torch.zeros(
-            (self._max_objs, 2), dtype=torch.float32, device=self.device
-        )
-        tl_indices = torch.zeros(
-            (self._max_objs,), dtype=torch.int64, device=self.device
-        )
+        tl_regs = torch.zeros((self._max_objs, 2), dtype=torch.float32)
+        tl_indices = torch.zeros((self._max_objs,), dtype=torch.int64)
 
         # bottom right features
         br_hmap = torch.zeros(
             (self._num_classes, self._fmap_size["h"], self._fmap_size["w"]),
-            device=self.device,
+            dtype=torch.float32,
         )
-        br_regs = torch.zeros(
-            (self._max_objs, 2), dtype=torch.float32, device=self.device
-        )
-        br_indices = torch.zeros(
-            (self._max_objs,), dtype=torch.int64, device=self.device
-        )
+        br_regs = torch.zeros((self._max_objs, 2), dtype=torch.float32)
+        br_indices = torch.zeros((self._max_objs,), dtype=torch.int64)
 
         # Marker masks to indicate valid objects out of max_objs
-        ind_masks = torch.zeros(
-            (self._max_objs,), dtype=torch.uint8, device=self.device
-        )
+        ind_masks = torch.zeros((self._max_objs,), dtype=torch.uint8)
         num_objs = min(bboxes.shape[0], self._max_objs)
         ind_masks[:num_objs] = 1
 
@@ -240,12 +242,10 @@ class CocoTrainDataset(Dataset):
             tl_regs[i] = torch.tensor(
                 [tl_x - tl_x_int, tl_y - tl_y_int],
                 dtype=torch.float32,
-                device=self.device,
             )
             br_regs[i] = torch.tensor(
                 [br_x - br_x_int, br_y - br_y_int],
                 dtype=torch.float32,
-                device=self.device,
             )
 
             # flattened indices which indicates the box position in feature map
@@ -318,7 +318,7 @@ def _center_crop(image: torch.Tensor, new_size: Tuple[int, int]):
 class CocoValDataset(Dataset):
     def __init__(self, cfg: Config, device: torch.device):
         self.cfg = cfg
-        self.device = device
+        self.device = "cpu"
         self.test_scales = cfg.test_scales
 
         self.data_list = _get_data_list(cfg.val_data_dir, "val")
@@ -336,7 +336,6 @@ class CocoValDataset(Dataset):
         try:
             height, width = image.shape[0:2]
         except:
-            print(data["image"])
             raise
 
         out_dict = {}
