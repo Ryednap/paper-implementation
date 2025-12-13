@@ -106,6 +106,7 @@ def train(fabric: Fabric, cfg: Config, disable_tqdm: bool, num_workers: int):
 @click.option("--eval-save-dir", type=click.Path(exists=True), required=True)
 @click.option("--seed", type=int, required=False)
 @click.option("--train-cache-rate", type=float, required=False)
+@click.option("--val-cache-rate", type=float, required=False)
 @click.option("--batch-size", type=int, required=False)
 @click.option("--lr", type=float, required=False)
 @click.option("--num-workers", type=int, required=False, default=0)
@@ -118,6 +119,7 @@ def main(
     eval_save_dir: Path,
     seed: Optional[int],
     train_cache_rate: Optional[float],
+    val_cache_rate: Optional[float],
     batch_size: Optional[int],
     lr: Optional[float],
     num_workers: int,
@@ -147,6 +149,8 @@ def main(
         cfg.seed = seed
     if train_cache_rate is not None:
         cfg.train_cache_rate = train_cache_rate
+    if val_cache_rate is not None:
+        cfg.val_cache_rate = val_cache_rate
     if batch_size is not None:
         cfg.batch_size = batch_size
     if lr is not None:
