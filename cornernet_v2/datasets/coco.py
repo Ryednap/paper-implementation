@@ -312,6 +312,10 @@ class CocoTrainDataset(Dataset):
         image = cast(torch.Tensor, data["image"])
         bboxes = cast(torch.Tensor, data["bboxes"])
         labels = cast(torch.Tensor, data["labels"])
+        
+        sorted_inds = torch.argsort(labels, dim=0)
+        bboxes = bboxes[sorted_inds]
+        labels = labels[sorted_inds]
 
         # top left features
         tl_hmap = torch.zeros(
