@@ -458,7 +458,7 @@ def _center_crop(image: torch.Tensor, new_size: Tuple[int, int]):
 class CocoValDataset(Dataset):
     def __init__(self, cfg: Config, device: torch.device):
         self.cfg = cfg
-        self.device = "cpu"
+        self.device = device
         self.test_scales = cfg.test_scales
 
         self.data_list = _get_data_list(cfg.val_data_dir, "val")
@@ -473,11 +473,7 @@ class CocoValDataset(Dataset):
         data = self.data_list[index]
 
         image = cast(np.ndarray, cv2.imread(data["image"], cv2.IMREAD_COLOR))
-        try:
-            height, width = image.shape[0:2]
-        except:
-            print(data["image"])
-            raise
+        height, width = image.shape[0:2]
 
         out_dict = {}
 
