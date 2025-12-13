@@ -386,4 +386,3 @@ class Trainer:
                 )
 
             self._total_steps += 1
-            break
