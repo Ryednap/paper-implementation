@@ -15,6 +15,8 @@ import monai.apps.detection.transforms.dictionary as mt_det
 
 import torch
 from torch.utils.data import Dataset
+from tqdm import tqdm
+from joblib import Parallel, delayed
 
 from configs.base import Config
 from ._coco_constants import (
@@ -471,8 +473,15 @@ class CocoValDataset(Dataset):
         def _load(p):
             return cv2.imread(p, cv2.IMREAD_COLOR_RGB)
 
-        with ThreadPoolExecutor(max_workers=min(32, (os.cpu_count() or 8) * 2)) as ex:
-            imgs = list(ex.map(_load, paths))
+        imgs = list(
+            tqdm(
+                Parallel(n_jobs=-1, return_as="generator")(
+                    delayed(_load)(p) for p in paths
+                ),
+                total=len(paths),
+                desc="Caching val images",
+            )
+        )
 
         for i, img in enumerate(imgs):
             self.data_list[i]["image"] = img

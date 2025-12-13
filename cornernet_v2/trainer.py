@@ -1,7 +1,4 @@
-from gc import disable
 import logging
-import time
-from matplotlib.transforms import BboxBase
 import numpy as np
 import orjson
 import torch
@@ -10,7 +7,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
-from typing import Any, Dict, Optional
+from typing import Dict
 from lightning.fabric import Fabric
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
