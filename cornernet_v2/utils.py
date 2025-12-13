@@ -15,7 +15,7 @@ def set_seed(seed=1234):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = False
-    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.benchmark = False
     # torch.backends.cuda.matmul.allow_tf32 = True
 
 
