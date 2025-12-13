@@ -273,6 +273,8 @@ class Validator:
         coco_eval = COCOeval(self._coco, coco_dets, "bbox")
         coco_eval.evaluate()
         coco_eval.accumulate()
+        coco_eval.summarize()
+        print(coco_eval.stats)
         return coco_eval.stats[0]
 
 
