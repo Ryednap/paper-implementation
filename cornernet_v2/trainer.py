@@ -312,9 +312,6 @@ class Trainer:
 
         for epoch in range(self.cfg.num_epochs):
             set_seed(self.cfg.seed + epoch + self.fabric.local_rank)
-            self.validator.validate(
-                    epoch, model, val_loader
-                )
             model.train()
             self.train_loop(epoch, model, optimizer, train_loader)
             scheduler.step()
@@ -392,3 +389,4 @@ class Trainer:
                 )
 
             self._total_steps += 1
+            break
