@@ -196,7 +196,7 @@ class Validator:
                 # Note that image can be batches
                 # of test time augmentations.
                 image = d["image"]
-                with torch.no_grad():
+                with torch.inference_mode():
                     result = model({"image": image})
                     out_dict = result["outputs"][-1]
 
