@@ -217,6 +217,12 @@ class CocoTrainDataset(Dataset):
                         src_mode="xywh",
                         dst_mode="xyxy",
                     ),
+                    mt_det.ClipBoxToImaged(
+                        box_keys="bboxes",
+                        label_keys="labels",
+                        box_ref_image_keys="image",
+                        remove_empty=True
+                    )
                 ]
             ),
             cache_rate=cfg.train_cache_rate,
