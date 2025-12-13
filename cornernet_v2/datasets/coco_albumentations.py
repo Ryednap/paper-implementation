@@ -4,8 +4,8 @@ import numpy as np
 import pycocotools.coco as coco
 from pycocotools.cocoeval import COCOeval
 from pathlib import Path
-from typing import Literal, Mapping, Tuple, cast
-
+from typing import Any, Dict, List, Literal, Mapping, Tuple, cast
+import albumentations as A
 
 import monai.data as md
 import monai.transforms as mt
@@ -55,136 +55,43 @@ def _get_data_list(data_dir: Path, split: Literal["train", "val", "test"]):
     return data_list
 
 
-def _get_intensity_transform(image_key: str):
+def _get_train_transform(cfg: Config):
 
-    def blend_(alpha: float, image1: torch.Tensor, image2: torch.Tensor):
-        image1 *= alpha
-        image2 *= 1 - alpha
-        return image1 + image2
+    def lightning_(image, alpha_std: float, rng=np.random):
+        alpha = rng.normal(scale=alpha_std, size=(3,)).astype(np.float32)
+        eigvec = np.array(COCO_EIGEN_VECTORS).astype(np.float32)
+        eig_value = np.array(COCO_EIGEN_VECTORS).astype(np.float32)
 
-    def lighting_(
-        image: torch.Tensor, alphastd: float, eigval: torch.Tensor, eigvec: torch.Tensor
-    ):
-        alpha = image.new_empty((3,)).normal_(0, alphastd)
-        rgb = eigvec @ (alpha * eigval)
-        return image + rgb.view(3, 1, 1)
+        rgb_shift = (eigvec @ (eig_value + alpha)).astype(np.float32)
+        img = image.astype(np.float32) + rgb_shift[None, None, :]
+        return img
 
-    return mt.Compose(
-        [
-            mt.RandScaleIntensityd(
-                keys=[image_key],
-                factors=0.4,
-                prob=0.5,
+    return A.Compose(
+        transforms=[
+            A.RandomResizedCrop(
+                size=cfg.train_patch_size,
+                scale=(0.75, 1.25),
+                p=1.0,
             ),
-            # contrast_
-            mt.Lambdad(
-                keys=image_key,
-                func=lambda image: blend_(
-                    alpha=1 + np.random.uniform(-0.4, 0.4),
-                    image1=image,
-                    image2=image.mean(),
-                ),
-                track_meta=False,
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.ColorJitter(
+                brightness=0.4,
+                contrast=0.4,
+                saturation=0.4,
+                hue=0.0,
+                p=1.0,
             ),
-            # saturation_
-            mt.Lambdad(
-                keys=image_key,
-                func=lambda image: blend_(
-                    alpha=1 + np.random.uniform(-0.4, 0.4),
-                    image1=image,
-                    image2=image.mean(dim=0, keepdim=True),
-                ),
-                track_meta=False,
-            ),
-            # lighting_
-            mt.Lambdad(
-                keys=image_key,
-                func=lambda image: lighting_(
-                    image=image,
-                    alphastd=0.1,
-                    eigval=torch.tensor(
-                        COCO_EIGEN_VALUES, dtype=image.dtype, device=image.device
-                    ),
-                    eigvec=torch.tensor(
-                        COCO_EIGEN_VECTORS, dtype=image.dtype, device=image.device
-                    ),
-                ),
-                track_meta=False,
-            ),
-        ]
+            A.Lambda(image=lightning_),
+        ],
+        bbox_params=A.BboxParams(
+            format="coco",
+            label_fields=["class_labels"],
+            min_visibility=0.1,
+            clip=True,
+            filter_invalid_bboxes=True,
+        ),
     )
-
-
-def get_train_transform(
-    cfg: Config, image_key: str, box_key: str, label_key: str, device: torch.device
-):
-    train_transforms = mt.Compose(
-        [
-            # mt.ToDeviced(keys=[image_key, box_key, label_key], device=device),
-            _get_intensity_transform(image_key),
-            mt_det.BoxToMaskd(
-                box_keys=box_key,
-                box_mask_keys="box_mask",
-                label_keys=label_key,
-                box_ref_image_keys=image_key,
-                min_fg_label=0,
-                ellipse_mask=True,
-            ),
-            mt.RandSpatialCropd(
-                keys=[image_key, "box_mask"],
-                roi_size=cfg.train_patch_size,
-                random_size=False,
-                lazy=True,
-            ),
-            mt.RandZoomd(
-                keys=[image_key, "box_mask"],
-                prob=0.5,
-                min_zoom=0.75,
-                max_zoom=1.25,
-                lazy=True,
-            ),
-            mt.RandFlipd(
-                keys=[image_key, "box_mask"],
-                prob=0.5,
-                spatial_axis=0,
-                lazy=True,
-            ),
-            mt.RandFlipd(
-                keys=[image_key, "box_mask"],
-                prob=0.5,
-                spatial_axis=1,
-                lazy=True,
-            ),
-            mt.Resized(
-                keys=[image_key, "box_mask"],
-                spatial_size=cfg.train_patch_size,
-                mode=("bilinear", "nearest"),
-                lazy=True,
-            ),
-            mt_det.MaskToBoxd(
-                box_mask_keys="box_mask",
-                box_keys=box_key,
-                label_keys=label_key,
-                min_fg_label=0,
-            ),
-            mt_det.ClipBoxToImaged(
-                box_keys=box_key,
-                label_keys=[label_key],
-                box_ref_image_keys=[image_key],
-                remove_empty=True,
-            ),
-            mt.DeleteItemsd(keys=["box_mask"]),
-            mt.NormalizeIntensityd(
-                keys=image_key,
-                subtrahend=torch.Tensor(COCO_MEAN),
-                divisor=torch.Tensor(COCO_STD),
-                channel_wise=True,
-            ),
-            # monai flips the height and width to be compatible with medical convention
-            mt.Transposed(keys=image_key, indices=(0, 2, 1)),
-        ]
-    )
-    return train_transforms
 
 
 class CocoTrainDataset(Dataset):
@@ -194,51 +101,7 @@ class CocoTrainDataset(Dataset):
         md.set_track_meta(False)
 
         train_data_list = _get_data_list(cfg.data_dir, "train")
-        ds = md.CacheDataset(
-            data=train_data_list,
-            transform=mt.Compose(
-                [
-                    mt.LoadImaged(
-                        keys=["image"],
-                        image_only=False,
-                        converter=lambda x: x.convert("RGB"),
-                    ),
-                    # mt.EnsureChannelFirstd(keys=["image"]),
-                    mt.EnsureTyped(keys=["image", "bboxes"], dtype=torch.float32),
-                    mt.EnsureTyped(keys=["labels"], dtype=torch.long),
-                    mt.Lambdad(keys="image", func=lambda x: x / 255.0),
-                    mt.Lambdad(keys="image", func=lambda x: x.permute(2, 0, 1)),
-                    mt_det.StandardizeEmptyBoxd(
-                        box_keys=["bboxes"],
-                        box_ref_image_keys="image",
-                    ),
-                    mt_det.ConvertBoxModed(
-                        box_keys="bboxes",
-                        src_mode="xywh",
-                        dst_mode="xyxy",
-                    ),
-                    mt_det.ClipBoxToImaged(
-                        box_keys="bboxes",
-                        label_keys="labels",
-                        box_ref_image_keys="image",
-                        remove_empty=True,
-                    ),
-                ]
-            ),
-            cache_rate=cfg.train_cache_rate,
-            num_workers=None,
-        )
-        self.dataset = md.Dataset(
-            ds,  # type: ignore
-            transform=get_train_transform(
-                cfg=cfg,
-                image_key="image",
-                box_key="bboxes",
-                label_key="labels",
-                device=device,
-            ),
-        )
-
+        
         self._num_classes = len(COCO_NAMES) - 1
         self._max_objs = 128
         self._fmap_size = {
@@ -247,7 +110,7 @@ class CocoTrainDataset(Dataset):
         }
 
     def __len__(self):
-        return len(self.dataset)
+        len(self.data_list)
 
     @staticmethod
     def compute_gaussian_radius(box_height, box_width, min_overlap=0.7) -> int:
@@ -308,7 +171,8 @@ class CocoTrainDataset(Dataset):
         return hmap
 
     def __getitem__(self, index):
-        data = cast(Mapping, self.dataset[index])
+        data = self.data_list[index]
+        
         image = cast(torch.Tensor, data["image"])
         bboxes = cast(torch.Tensor, data["bboxes"])
         labels = cast(torch.Tensor, data["labels"])

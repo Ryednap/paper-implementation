@@ -276,7 +276,7 @@ class Validator:
         coco_eval = COCOeval(self._coco, coco_dets, "bbox")
         coco_eval.evaluate()
         coco_eval.accumulate()
-        return coco_eval.stats
+        return coco_eval.stats[0]
 
 
 class Trainer:
@@ -320,9 +320,12 @@ class Trainer:
                 self._last_validation = self.validator.validate(
                     epoch, model, val_loader
                 )
-                if self._last_validation > self._best_validation:
+                if (
+                    self._last_validation is None
+                    or self._last_validation > self._best_validation
+                ):
                     self._best_validation = self._last_validation
-                    fname = f"epoch_{epoch}_metric_{self._best_validation:%.5f}.pth"
+                    fname = f"epoch_{epoch}_mAP/mAP_{self._best_validation:%.5f}.pth"
                     self.fabric.save(fname, state=model.state_dict())
                     self.logger.info(
                         f"Epoch: %d New Best :: %.5f", epoch, self._best_validation
