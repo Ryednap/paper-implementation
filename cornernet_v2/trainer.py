@@ -86,7 +86,7 @@ class Validator:
         br_hmap = hetmap_nms(heatmap=br_hmap, kernel=nms_kernel)
 
         tl_scores, tl_inds, tl_classes, tl_ys, tl_xs = topk(tl_hmap, k=topk_k)
-        br_scores, br_inds, br_classes, br_ys, br_xs = topk(tl_hmap, k=topk_k)
+        br_scores, br_inds, br_classes, br_ys, br_xs = topk(br_hmap, k=topk_k)
 
         tl_xs = tl_xs.view(B, topk_k, 1).expand(B, topk_k, topk_k)
         br_xs = br_xs.view(B, 1, topk_k).expand(B, topk_k, topk_k)
@@ -98,8 +98,8 @@ class Validator:
         tl_embd = transpose_and_gather_feat(tl_embd, ind=tl_inds)
         br_embd = transpose_and_gather_feat(br_embd, ind=br_inds)
 
-        tl_regs.view(B, topk_k, 1, 2)
-        br_regs.view(B, 1, topk_k, 2)
+        tl_regs = tl_regs.view(B, topk_k, 1, 2)
+        br_regs = br_regs.view(B, 1, topk_k, 2)
 
         tl_xs = tl_xs + tl_regs[..., 0]
         tl_ys = tl_ys + tl_regs[..., 1]

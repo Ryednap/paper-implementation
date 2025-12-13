@@ -24,7 +24,7 @@ def _nms_through_kernel(heatmap: torch.Tensor, kernel: int):
     hmax = F.max_pool2d(
         heatmap, kernel_size=kernel, stride=1, padding=(kernel - 1) // 2
     )
-    keep = (hmax == hmax).float()
+    keep = (hmax == heatmap).float()
     return heatmap * keep
 
 
