@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 import math
+import os
 import cv2
 import numpy as np
 import pycocotools.coco as coco
@@ -312,7 +314,7 @@ class CocoTrainDataset(Dataset):
         image = cast(torch.Tensor, data["image"])
         bboxes = cast(torch.Tensor, data["bboxes"])
         labels = cast(torch.Tensor, data["labels"])
-        
+
         sorted_inds = torch.argsort(labels, dim=0)
         bboxes = bboxes[sorted_inds]
         labels = labels[sorted_inds]
@@ -463,6 +465,18 @@ class CocoValDataset(Dataset):
 
         self.data_list = _get_data_list(cfg.val_data_dir, "val")
 
+        n_cache = int(len(self.data_list) * self.cfg.val_cache_rate)
+        paths = [d["image"] for d in self.data_list[:n_cache]]
+
+        def _load(p):
+            return cv2.imread(p, cv2.IMREAD_COLOR_RGB)
+
+        with ThreadPoolExecutor(max_workers=min(32, (os.cpu_count() or 8) * 2)) as ex:
+            imgs = list(ex.map(_load, paths))
+
+        for i, img in enumerate(imgs):
+            self.data_list[i]["image"] = img
+
         self._mean = torch.tensor(COCO_MEAN, dtype=torch.float32, device=self.device)
         self._std = torch.tensor(COCO_STD, dtype=torch.float32, device=self.device)
 
@@ -472,7 +486,9 @@ class CocoValDataset(Dataset):
     def __getitem__(self, index):
         data = self.data_list[index]
 
-        image = cast(np.ndarray, cv2.imread(data["image"], cv2.IMREAD_COLOR))
+        image = data["image"]
+        if isinstance(image, str) or isinstance(image, Path):
+            image = cast(np.ndarray, cv2.imread(str(image), cv2.IMREAD_COLOR_RGB))
         height, width = image.shape[0:2]
 
         out_dict = {}

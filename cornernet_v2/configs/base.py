@@ -12,6 +12,7 @@ class Config:
     precision: Literal["32-true", "16-mixed", "16-true", "bf16-mixed", "bf16-true"]
     train_patch_size: Tuple[int, int]
     train_cache_rate: float
+    val_cache_rate: float
     use_gaussian: bool
     gaussian_iou: float
     batch_size: int
@@ -49,6 +50,7 @@ class BaseConfig(Config):
     precision = "32-true"
     train_patch_size = (511, 511)
     train_cache_rate = 0.0
+    val_cache_rate = 0.0
     use_gaussian = True
     gaussian_iou = 0.3
     batch_size = 48

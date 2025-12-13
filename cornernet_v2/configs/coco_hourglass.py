@@ -11,6 +11,7 @@ class CocoHourglassSmall(BaseConfig):
     precision = "32-true"
     train_patch_size = (511, 511)
     train_cache_rate = 0.0
+    val_cach_rate = 0.0
     use_gaussian = True
     gaussian_iou = 0.3
     batch_size = 48
