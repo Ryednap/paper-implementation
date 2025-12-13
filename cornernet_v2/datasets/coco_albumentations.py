@@ -54,7 +54,7 @@ def _get_data_list(data_dir: Path, split: Literal["train", "val", "test"]):
 
 def _get_train_transform(cfg: Config):
 
-    def lightning_(image, alpha_std: float=0.1, rng=np.random, **kwargs):
+    def lightning_(image, alpha_std: float = 0.1, rng=np.random, **kwargs):
         alpha = rng.normal(scale=alpha_std, size=(3,)).astype(np.float32)
         eigvec = np.array(COCO_EIGEN_VALUES).astype(np.float32)
         eig_value = np.array(COCO_EIGEN_VECTORS).astype(np.float32)

@@ -458,7 +458,7 @@ def _center_crop(image: torch.Tensor, new_size: Tuple[int, int]):
 class CocoValDataset(Dataset):
     def __init__(self, cfg: Config, device: torch.device):
         self.cfg = cfg
-        self.device = device
+        self.device = "cpu"
         self.test_scales = cfg.test_scales
 
         self.data_list = _get_data_list(cfg.val_data_dir, "val")
