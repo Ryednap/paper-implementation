@@ -2,14 +2,10 @@ import math
 import cv2
 import numpy as np
 import pycocotools.coco as coco
-from pycocotools.cocoeval import COCOeval
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Mapping, Tuple, cast
+from typing import Literal, Tuple, cast
 import albumentations as A
 
-import monai.data as md
-import monai.transforms as mt
-import monai.apps.detection.transforms.dictionary as mt_det
 
 import torch
 from torch.utils.data import Dataset
@@ -58,7 +54,7 @@ def _get_data_list(data_dir: Path, split: Literal["train", "val", "test"]):
 
 def _get_train_transform(cfg: Config):
 
-    def lightning_(image, alpha_std: float, rng=np.random):
+    def lightning_(image, alpha_std: float=0.1, rng=np.random, **kwargs):
         alpha = rng.normal(scale=alpha_std, size=(3,)).astype(np.float32)
         eigvec = np.array(COCO_EIGEN_VALUES).astype(np.float32)
         eig_value = np.array(COCO_EIGEN_VECTORS).astype(np.float32)
@@ -69,9 +65,12 @@ def _get_train_transform(cfg: Config):
 
     return A.Compose(
         transforms=[
-            A.RandomResizedCrop(
+            A.RandomSizedCrop(
+                min_max_height=(
+                    int(cfg.train_patch_size[0] * 0.75),
+                    int(cfg.train_patch_size[1] * 1.25),
+                ),
                 size=cfg.train_patch_size,
-                scale=(0.75, 1.25),
                 p=1.0,
             ),
             A.HorizontalFlip(p=0.5),
@@ -180,6 +179,7 @@ class CocoTrainDataset(Dataset):
 
         augmented = self.transform(image=image, bboxes=bboxes, class_labels=labels)
         image = torch.from_numpy(augmented["image"]).to(dtype=torch.float32)
+        image = image.permute(2, 0, 1)
         bboxes = torch.from_numpy(augmented["bboxes"]).to(dtype=torch.float32)
         labels = torch.from_numpy(augmented["class_labels"]).to(dtype=torch.long)
 
@@ -263,6 +263,7 @@ class CocoTrainDataset(Dataset):
             "br_regs": br_regs,
             "br_indices": br_indices,
             "ind_masks": ind_masks,
+            "bboxes": bboxes,
         }
 
 
@@ -333,10 +334,7 @@ class CocoValDataset(Dataset):
         data = self.data_list[index]
 
         image = cast(np.ndarray, cv2.imread(data["image"], cv2.IMREAD_COLOR))
-        try:
-            height, width = image.shape[0:2]
-        except:
-            raise
+        height, width = image.shape[0:2]
 
         out_dict = {}
 
