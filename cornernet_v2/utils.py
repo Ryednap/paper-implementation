@@ -16,7 +16,8 @@ def set_seed(seed=1234):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = True
-    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cuda.matmul.allow_tf32 = True  # for FC
+    torch.backends.cudnn.allow_tf32 = True  # for conv
 
 
 def _nms_through_kernel(heatmap: torch.Tensor, kernel: int):
@@ -44,7 +45,6 @@ def hetmap_nms(
         return _nms_through_radius(heatmap, nms_radius)
 
     raise ValueError("One of the `kernel` or `nms_radius` needs to be supplied.")
-
 
 
 def transpose_and_gather_feat(feat: torch.Tensor, ind: torch.Tensor):
@@ -77,5 +77,5 @@ def topk(score_map, k=20):
 
 
 def count_parameters(model):
-  num_paras = [v.numel() / 1e6 for k, v in model.named_parameters() if 'aux' not in k]
-  return sum(num_paras)
+    num_paras = [v.numel() / 1e6 for k, v in model.named_parameters() if "aux" not in k]
+    return sum(num_paras)
