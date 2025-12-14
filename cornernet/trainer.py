@@ -335,7 +335,7 @@ class Trainer:
             state["current_epoch"] = epoch + 1
             state["total_steps"] = self._total_steps
             self.fabric.save(
-                os.path.join(self.ckpt_dir, f"epoch-{epoch+1:04d}.ckpt"), state
+                os.path.join(self.ckpt_dir, f"model.ckpt"), state
             )
 
             torch.cuda.empty_cache()
