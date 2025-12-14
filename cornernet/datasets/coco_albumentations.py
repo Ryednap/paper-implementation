@@ -50,7 +50,7 @@ def _get_data_list(data_dir: Path, split: Literal["train", "val", "test"]):
             }
         )
 
-    return TorchSerializedList(data_list)
+    return data_list
 
 
 def _get_train_transform(cfg: Config):
