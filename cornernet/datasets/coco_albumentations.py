@@ -1,5 +1,6 @@
 import math
 import cv2
+from joblib import Parallel, delayed
 import numpy as np
 import pycocotools.coco as coco
 from pathlib import Path
@@ -9,6 +10,7 @@ import albumentations as A
 
 import torch
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 from configs.base import Config
 from ._coco_constants import (
@@ -58,7 +60,7 @@ def _get_train_transform(cfg: Config):
         eigvec = np.array(COCO_EIGEN_VALUES).astype(np.float32)
         eig_value = np.array(COCO_EIGEN_VECTORS).astype(np.float32)
 
-        rgb_shift = (eigvec @ (eig_value + alpha))
+        rgb_shift = eigvec @ (eig_value + alpha)
         img = image.astype(np.float32) + rgb_shift[None, None, :]
         return img
 
@@ -316,10 +318,29 @@ def _center_crop(image: torch.Tensor, new_size: Tuple[int, int]):
 class CocoValDataset(Dataset):
     def __init__(self, cfg: Config, device: torch.device):
         self.cfg = cfg
-        self.device = "cpu"
+        self.device = device
         self.test_scales = cfg.test_scales
 
         self.data_list = _get_data_list(cfg.val_data_dir, "val")
+
+        n_cache = int(len(self.data_list) * self.cfg.val_cache_rate)
+        paths = [d["image"] for d in self.data_list[:n_cache]]
+
+        def _load(p):
+            return cv2.imread(p, cv2.IMREAD_COLOR_RGB)
+
+        imgs = list(
+            tqdm(
+                Parallel(n_jobs=-1, return_as="generator")(
+                    delayed(_load)(p) for p in paths
+                ),
+                total=len(paths),
+                desc="Caching val images",
+            )
+        )
+
+        for i, img in enumerate(imgs):
+            self.data_list[i]["image"] = img
 
         self._mean = torch.tensor(COCO_MEAN, dtype=torch.float32, device=self.device)
         self._std = torch.tensor(COCO_STD, dtype=torch.float32, device=self.device)
@@ -330,7 +351,9 @@ class CocoValDataset(Dataset):
     def __getitem__(self, index):
         data = self.data_list[index]
 
-        image = cast(np.ndarray, cv2.imread(data["image"], cv2.IMREAD_COLOR))
+        image = data["image"]
+        if isinstance(image, str) or isinstance(image, Path):
+            image = cast(np.ndarray, cv2.imread(str(image), cv2.IMREAD_COLOR_RGB))
         height, width = image.shape[0:2]
 
         out_dict = {}
