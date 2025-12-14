@@ -108,7 +108,7 @@ class CocoTrainDataset(Dataset):
         }
 
     def __len__(self):
-        len(self.data_list)
+        return len(self.data_list)
 
     @staticmethod
     def compute_gaussian_radius(box_height, box_width, min_overlap=0.7) -> int:
