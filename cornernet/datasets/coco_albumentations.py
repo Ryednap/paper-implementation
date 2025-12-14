@@ -179,7 +179,7 @@ class CocoTrainDataset(Dataset):
         image = torch.from_numpy(augmented["image"]).to(dtype=torch.float32)
         image = image.permute(2, 0, 1)
         bboxes = torch.from_numpy(augmented["bboxes"]).to(dtype=torch.float32)
-        labels = torch.from_numpy(augmented["class_labels"]).to(dtype=torch.long)
+        labels = torch.Tensor(augmented["class_labels"]).to(dtype=torch.long)
 
         bboxes[:, 2:] += bboxes[:, :2]  # xywh -> xyxy
 
