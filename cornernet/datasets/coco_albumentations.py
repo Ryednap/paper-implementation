@@ -99,8 +99,6 @@ class CocoTrainDataset(Dataset):
 
         self.data_list = _get_data_list(cfg.data_dir, "train")
         self.transform = _get_train_transform(cfg=cfg)
-        
-        assert cfg.num_classes == len(COCO_IDS) - 1
 
         self._num_classes = cfg.num_classes
         self._max_objs = cfg.max_objs
