@@ -7,52 +7,20 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
-from typing import Dict
 from lightning.fabric import Fabric
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
 from configs.base import Config
-from utils import set_seed, topk, transpose_and_gather_feat, hetmap_nms
+from utils import (
+    set_seed,
+    topk,
+    transpose_and_gather_feat,
+    hetmap_nms,
+    gather_feat,
+    convert_to_coco_eval_format,
+)
 from nms import soft_nms_merge
-from datasets._coco_constants import COCO_IDS
-
-
-def gather_feat(feat: torch.Tensor, ind: torch.Tensor):
-    """
-    Returns the value of the feature tensor at given indices
-    Expected Tensor shape::
-    `feat`: (Batch, K, C)
-    `ind`: (Batch, num_dets)
-    The gathering is performed along dim=1
-    """
-
-    B, num_dets = ind.shape
-    ind = ind[:, :, None].expand(B, num_dets, feat.shape[-1])
-    return feat.gather(dim=1, index=ind)
-
-
-def convert_to_coco_eval_format(all_bboxes: Dict[str, Dict[int, np.ndarray]]):
-    detections = []
-    for image_id in all_bboxes:
-        for cls_ind in all_bboxes[image_id]:
-            category_id = COCO_IDS[cls_ind - 1]
-            for bbox in all_bboxes[image_id][cls_ind]:
-                # xyxy to xywh
-                bbox[2] -= bbox[0]
-                bbox[3] -= bbox[1]
-                score = bbox[4]
-
-                bbox_out = list(map(lambda x: float("{:.2f}".format(x)), bbox[0:4]))
-                detection = {
-                    "image_id": int(image_id),
-                    "category_id": int(category_id),
-                    "bbox": bbox_out,
-                    "score": float("{:.2f}".format(score)),
-                }
-                detections.append(detection)
-
-    return detections
 
 
 class Validator:
@@ -323,8 +291,11 @@ class Trainer:
                     or self._last_validation > self._best_validation
                 ):
                     self._best_validation = self._last_validation
-                    fname = f"epoch_{epoch}_mAP/mAP_{self._best_validation:.5f}.pth"
-                    self.fabric.save(fname, state=model.state_dict())
+                    fname = f"epoch_{epoch}_mAP_{self._best_validation:.5f}.pth"
+                    self.fabric.save(
+                        self.cfg.eval_save_dir / "models" / fname,
+                        state=model.state_dict(),
+                    )
                     self.logger.info(
                         f"Epoch: %d New Best :: %.5f", epoch, self._best_validation
                     )

@@ -133,7 +133,7 @@ class CocoTrainDataset(Dataset):
         sq3 = math.sqrt(b3**2 - 4 * a3 * c3)
         r3 = (b3 + sq3) / 2
 
-        return int(min(r1, r2, r3))
+        return max(0, int(min(r1, r2, r3)))
 
     @staticmethod
     def _gaussian_2d(shape: Tuple[int, int], sigma: float = 1.0):

@@ -1,11 +1,12 @@
 from math import e
 import os
 import random
-from typing import List, Optional
+from typing import Dict, List, Optional
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from datasets._coco_constants import COCO_IDS
 
 
 def set_seed(seed=1234):
@@ -79,3 +80,40 @@ def topk(score_map, k=20):
 def count_parameters(model):
     num_paras = [v.numel() / 1e6 for k, v in model.named_parameters() if "aux" not in k]
     return sum(num_paras)
+
+
+def gather_feat(feat: torch.Tensor, ind: torch.Tensor):
+    """
+    Returns the value of the feature tensor at given indices
+    Expected Tensor shape::
+    `feat`: (Batch, K, C)
+    `ind`: (Batch, num_dets)
+    The gathering is performed along dim=1
+    """
+
+    B, num_dets = ind.shape
+    ind = ind[:, :, None].expand(B, num_dets, feat.shape[-1])
+    return feat.gather(dim=1, index=ind)
+
+
+def convert_to_coco_eval_format(all_bboxes: Dict[str, Dict[int, np.ndarray]]):
+    detections = []
+    for image_id in all_bboxes:
+        for cls_ind in all_bboxes[image_id]:
+            category_id = COCO_IDS[cls_ind - 1]
+            for bbox in all_bboxes[image_id][cls_ind]:
+                # xyxy to xywh
+                bbox[2] -= bbox[0]
+                bbox[3] -= bbox[1]
+                score = bbox[4]
+
+                bbox_out = list(map(lambda x: float("{:.2f}".format(x)), bbox[0:4]))
+                detection = {
+                    "image_id": int(image_id),
+                    "category_id": int(category_id),
+                    "bbox": bbox_out,
+                    "score": float("{:.2f}".format(score)),
+                }
+                detections.append(detection)
+
+    return detections
