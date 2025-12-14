@@ -8,6 +8,7 @@ class Config:
     data_dir: Path
     val_data_dir: Path
     eval_save_dir: Path
+    ckpt_dir: Path
 
     precision: Literal["32-true", "16-mixed", "16-true", "bf16-mixed", "bf16-true"]
     train_patch_size: Tuple[int, int]
@@ -21,6 +22,7 @@ class Config:
     lr_step: Tuple[int, int]
     val_frequency: int
     logging_frequency: int
+    ckpt_frequency: int
 
     down_ratio: int
     max_objs: int
@@ -79,7 +81,6 @@ class BaseConfig(Config):
         if self.val_data_dir is None:
             self.val_data_dir = self.data_dir
 
-    
     def to_dict(self):
         """
         Returns a dictionary of all config attributes (including inherited ones),

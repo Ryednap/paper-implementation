@@ -12,7 +12,6 @@ from torch.utils.data import Dataset
 
 from configs.base import Config
 from ._coco_constants import (
-    COCO_NAMES,
     COCO_IDS,
     COCO_MEAN,
     COCO_STD,
@@ -59,7 +58,7 @@ def _get_train_transform(cfg: Config):
         eigvec = np.array(COCO_EIGEN_VALUES).astype(np.float32)
         eig_value = np.array(COCO_EIGEN_VECTORS).astype(np.float32)
 
-        rgb_shift = (eigvec @ (eig_value + alpha)).astype(np.float32)
+        rgb_shift = (eigvec @ (eig_value + alpha))
         img = image.astype(np.float32) + rgb_shift[None, None, :]
         return img
 
@@ -88,7 +87,6 @@ def _get_train_transform(cfg: Config):
         bbox_params=A.BboxParams(
             format="coco",
             label_fields=["class_labels"],
-            min_visibility=0.1,
             clip=True,
             filter_invalid_bboxes=True,
         ),
@@ -101,9 +99,11 @@ class CocoTrainDataset(Dataset):
 
         self.data_list = _get_data_list(cfg.data_dir, "train")
         self.transform = _get_train_transform(cfg=cfg)
+        
+        assert cfg.num_classes == len(COCO_IDS) - 1
 
-        self._num_classes = len(COCO_NAMES) - 1
-        self._max_objs = 128
+        self._num_classes = cfg.num_classes
+        self._max_objs = cfg.max_objs
         self._fmap_size = {
             "h": (cfg.train_patch_size[0] + 1) // cfg.down_ratio,
             "w": (cfg.train_patch_size[1] + 1) // cfg.down_ratio,
@@ -195,7 +195,7 @@ class CocoTrainDataset(Dataset):
             dtype=torch.float32,
         )
         tl_regs = torch.zeros((self._max_objs, 2), dtype=torch.float32)
-        tl_indices = torch.zeros((self._max_objs,), dtype=torch.int64)
+        tl_indices = torch.zeros((self._max_objs,), dtype=torch.long)
 
         # bottom right features
         br_hmap = torch.zeros(
@@ -203,7 +203,7 @@ class CocoTrainDataset(Dataset):
             dtype=torch.float32,
         )
         br_regs = torch.zeros((self._max_objs, 2), dtype=torch.float32)
-        br_indices = torch.zeros((self._max_objs,), dtype=torch.int64)
+        br_indices = torch.zeros((self._max_objs,), dtype=torch.long)
 
         # Marker masks to indicate valid objects out of max_objs
         ind_masks = torch.zeros((self._max_objs,), dtype=torch.uint8)
@@ -263,7 +263,6 @@ class CocoTrainDataset(Dataset):
             "br_regs": br_regs,
             "br_indices": br_indices,
             "ind_masks": ind_masks,
-            "bboxes": bboxes,
         }
 
 

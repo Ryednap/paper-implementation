@@ -1,7 +1,6 @@
 import os
 import click
-from dataclasses import asdict
-from typing import Any, Dict, Literal, Optional, cast
+from typing import Optional, cast
 from lightning import Fabric
 from pathlib import Path
 from lightning.fabric import Fabric
@@ -12,7 +11,7 @@ from torch.utils.data import DataLoader
 from configs.base import Config
 from trainer import Trainer
 from nets.hourglass import CornerNet
-from datasets.coco import CocoTrainDataset, CocoValDataset
+from datasets.coco_albumentations import CocoTrainDataset, CocoValDataset
 from logger import init_logger
 from utils import set_seed, count_parameters
 
@@ -74,8 +73,6 @@ def train(fabric: Fabric, cfg: Config, disable_tqdm: bool, num_workers: int):
         fabric=fabric,
         cfg=cfg,
         logger=logger,
-        validation_frequency=cfg.val_frequency,
-        logging_frequency=cfg.logging_frequency,
         disable_tqdm=disable_tqdm,
     )
 
@@ -104,6 +101,7 @@ def train(fabric: Fabric, cfg: Config, disable_tqdm: bool, num_workers: int):
 @click.option("--data-dir", type=click.Path(exists=True), required=True)
 @click.option("--val-data-dir", type=click.Path(exists=True), required=False)
 @click.option("--eval-save-dir", type=click.Path(exists=True), required=True)
+@click.option("--ckpt-dir", type=click.Path(exists=True), required=True)
 @click.option("--seed", type=int, required=False)
 @click.option("--train-cache-rate", type=float, required=False)
 @click.option("--val-cache-rate", type=float, required=False)
@@ -114,8 +112,9 @@ def main(
     disable_tqdm: bool,
     config: str,
     precision: str,
-    data_dir: Path,
-    val_data_dir: Optional[Path],
+    data_dir: str,
+    val_data_dir: Optional[str],
+    ckpt_dir: str,
     eval_save_dir: Path,
     seed: Optional[int],
     train_cache_rate: Optional[float],
@@ -143,6 +142,7 @@ def main(
     cfg.data_dir = Path(data_dir)
     cfg.val_data_dir = Path(val_data_dir)
     cfg.eval_save_dir = Path(eval_save_dir)
+    cfg.ckpt_dir = Path(ckpt_dir)
     cfg.precision = precision
 
     if seed is not None:

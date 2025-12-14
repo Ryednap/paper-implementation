@@ -1,4 +1,5 @@
 import logging
+import os
 import numpy as np
 import orjson
 import torch
@@ -252,21 +253,27 @@ class Trainer:
         fabric: Fabric,
         cfg: Config,
         logger: logging.Logger,
-        validation_frequency: int = 1,
-        logging_frequency: int = 1,
         disable_tqdm: bool = True,
     ):
         self.fabric = fabric
         self.cfg = cfg
         self.logger = logger
-        self.validation_frequency = validation_frequency
-        self.logging_frequency = logging_frequency
+        self.ckpt_dir = cfg.ckpt_dir
+        self.validation_frequency = cfg.val_frequency
+        self.logging_frequency = cfg.logging_frequency
         self.disable_tqdm = disable_tqdm
         self.validator = Validator(self.cfg, logger=self.logger)
 
         self._last_validation = 0.0
         self._best_validation = 0.0
         self._total_steps = 0
+
+    @staticmethod
+    def latest_ckpt(path: str):
+        if not path or not os.path.isdir(path):
+            return None
+        files = sorted([f for f in os.listdir(path) if f.endswith(".ckpt")])
+        return os.path.join(path, files[-1]) if files else None
 
     def fit(
         self,
@@ -277,7 +284,25 @@ class Trainer:
         val_loader: DataLoader,
     ):
 
-        for epoch in range(self.cfg.num_epochs):
+        current_epoch = 0
+
+        state = {
+            "model": model,
+            "optimizer": optimizer,
+            "scheduler": scheduler,
+            "current_epoch": current_epoch,
+            "total_steps": self._total_steps,
+        }
+
+        ckpt_path = self.latest_ckpt(self.ckpt_dir.as_posix())
+        if ckpt_path:
+            remainder = self.fabric.load(ckpt_path, state)
+            current_epoch = state["current_epoch"]
+            self._total_steps = state["total_steps"]
+            if remainder:
+                raise RuntimeError(f"Unused checkpoint keys: {list(remainder.keys())}")
+
+        for epoch in range(current_epoch, self.cfg.num_epochs):
             set_seed(self.cfg.seed + epoch + self.fabric.local_rank)
             model.train()
             self.train_loop(epoch, model, optimizer, train_loader)
@@ -292,9 +317,9 @@ class Trainer:
                 ):
                     self._best_validation = self._last_validation
                     fname = f"epoch_{epoch}_mAP_{self._best_validation:.5f}.pth"
-                    self.fabric.save(
+                    torch.save(
+                        model.state_dict(),
                         self.cfg.eval_save_dir / "models" / fname,
-                        state=model.state_dict(),
                     )
                     self.logger.info(
                         f"Epoch: %d New Best :: %.5f", epoch, self._best_validation
@@ -306,6 +331,12 @@ class Trainer:
                         self._last_validation,
                         self._best_validation,
                     )
+
+            state["current_epoch"] = epoch + 1
+            state["total_steps"] = self._total_steps
+            self.fabric.save(
+                os.path.join(self.ckpt_dir, f"epoch-{epoch+1:04d}.ckpt"), state
+            )
 
             torch.cuda.empty_cache()
 
