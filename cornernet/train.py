@@ -107,6 +107,7 @@ def train(fabric: Fabric, cfg: Config, disable_tqdm: bool, num_workers: int):
 @click.option("--val-cache-rate", type=float, required=False)
 @click.option("--batch-size", type=int, required=False)
 @click.option("--lr", type=float, required=False)
+@click.option("--num-epochs", type=int, required=False)
 @click.option("--num-workers", type=int, required=False, default=0)
 def main(
     disable_tqdm: bool,
@@ -121,6 +122,7 @@ def main(
     val_cache_rate: Optional[float],
     batch_size: Optional[int],
     lr: Optional[float],
+    num_epochs: Optional[int],
     num_workers: int,
 ):
 
@@ -155,6 +157,8 @@ def main(
         cfg.batch_size = batch_size
     if lr is not None:
         cfg.lr = lr
+    if num_epochs is not None:
+        cfg.num_epochs = num_epochs
 
     fabric = Fabric(
         accelerator="cuda",
