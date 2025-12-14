@@ -1,330 +1,170 @@
-import logging
 import os
-import sys
-import time
-import argparse
-from datetime import datetime
-from Cython import warn
-import numpy as np
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
-import torch.distributed as dist
-import torch.utils.data.distributed
-import nms
-import warnings
+import click
+from dataclasses import asdict
+from typing import Any, Dict, Literal, Optional, cast
+from lightning import Fabric
+from pathlib import Path
+from lightning.fabric import Fabric
 
-from datasets.coco import COCO, COCO_eval
-from nets.hourglass import get_hourglass
-from utils.losses import _neg_loss, _embedding_loss, _reg_loss, Loss
-from utils.keypoint import _decode, _rescale_dets, _transpose_and_gather_feat
-from utils.utils import count_parameters
+import torch.optim as optim
+from torch.utils.data import DataLoader
 
-warnings.filterwarnings(action="ignore", message="An output with one or more elements was resized")
-
-parser = argparse.ArgumentParser(description="cornernet")
-
-parser.add_argument("--local-rank", type=int, default=0)
-parser.add_argument("--dist", action="store_true")
-
-parser.add_argument("--root-dir", type=str, default="./")
-parser.add_argument("--data-dir", type=str, default="./data")
-parser.add_argument("--log_name", type=str, default="test")
-parser.add_argument("--dataset", type=str, default="coco", choices=["coco", "pasacl"])
-parser.add_argument("--arch", type=str, default="large_hourglass")
-parser.add_argument('--img_size', type=int, default=511)
-parser.add_argument("--split_ratio", type=float, default=1.0)
-parser.add_argument("--lr", type=float, default=2.5e-4)
-parser.add_argument("--lr_step", type=str, default="45,60")
-parser.add_argument("--batch-size", type=int, default=48)
-parser.add_argument("--num_epochs", type=int, default=70)
-parser.add_argument("--log_interval", type=int, default=100)
-parser.add_argument("--val_interval", type=int, default=5)
-parser.add_argument("--num_workers", type=int, default=2)
-
-cfg = parser.parse_args()
-
-os.chdir(cfg.root_dir)
-
-cfg.log_dir = os.path.join(cfg.root_dir, "logs", cfg.log_name)
-cfg.ckpt_dir = os.path.join(cfg.root_dir, "ckpt", cfg.log_name)
-
-os.makedirs(cfg.log_dir, exist_ok=True)
-os.makedirs(cfg.ckpt_dir, exist_ok=True)
-
-cfg.lr_step = [int(s) for s in cfg.lr_step.split(",")]
+from configs.base import Config
+from trainer import Trainer
+from nets.hourglass import CornerNet
+from datasets.coco import CocoTrainDataset, CocoValDataset
+from logger import init_logger
+from utils import set_seed, count_parameters
 
 
-class Saver:
-    def __init__(self, distributed_rank, save_dir):
-        self.distributed_rank = distributed_rank
-        self.save_dir = save_dir
-        os.makedirs(self.save_dir, exist_ok=True)
-        return
-
-    def save(self, obj, save_name):
-        if self.distributed_rank == 0:
-            torch.save(obj, os.path.join(self.save_dir, save_name + ".t7"))
-            return "checkpoint saved in %s !" % os.path.join(self.save_dir, save_name)
-        else:
-            return ""
+def initialize_os_environ():
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+    os.environ["NUMEXPR_NUM_THREADS"] = "1"
+    os.environ["TORCH_DISTRIBUTED_BACKEND"] = "nccl"
 
 
-def create_logger(distributed_rank=0, save_dir=None):
-    logger = logging.getLogger("logger")
-    logger.setLevel(logging.DEBUG)
+def train(fabric: Fabric, cfg: Config, disable_tqdm: bool, num_workers: int):
+    set_seed(cfg.seed)
+    initialize_os_environ()
 
-    filename = "log_%s.txt" % (datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+    logger = init_logger(name=__name__, is_rank_zero=fabric.is_global_zero)
+    logger.info("Config:\n\n%s\n\n", cfg.to_dict())
 
-    # don't log results for the non-master process
-    if distributed_rank > 0:
-        return logger
-    ch = logging.StreamHandler(stream=sys.stdout)
-    ch.setLevel(logging.DEBUG)
-    # formatter = logging.Formatter("%(asctime)s %(name)s %(levelname)s: %(message)s")
-    formatter = logging.Formatter("%(message)s [%(asctime)s]")
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
+    train_dset = CocoTrainDataset(cfg=cfg, device=fabric.device)
+    val_dset = CocoValDataset(cfg=cfg, device=fabric.device)
 
-    if save_dir is not None:
-        fh = logging.FileHandler(os.path.join(save_dir, filename))
-        fh.setLevel(logging.DEBUG)
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
-
-    return logger
-
-
-def main():
-    saver = Saver(cfg.local_rank, save_dir=cfg.ckpt_dir)
-    logger = create_logger(cfg.local_rank, save_dir=cfg.log_dir)
-
-    print = logger.info
-    if "LOCAL_RANK" in os.environ:
-        cfg.local_rank = int(os.environ["LOCAL_RANK"])
-    print(cfg)
-
-    torch.manual_seed(317)
-    torch.backends.cudnn.benchmark = True  # disable is OOM
-
-    num_gpus = torch.cuda.device_count()
-    if cfg.dist:
-        cfg.device = torch.device("cuda:%d" % cfg.local_rank)
-        torch.cuda.set_device(cfg.local_rank)
-        dist.init_process_group(
-            backend="nccl",
-            init_method="env://",
-            world_size=num_gpus,
-            rank=cfg.local_rank,
-        )
-    else:
-        cfg.device = torch.device("cuda")
-
-    print("Setting up data")
-
-    Dataset = COCO
-    train_dataset = Dataset(
-        cfg.data_dir, "train", split_ratio=cfg.split_ratio, img_size=cfg.img_size
-    )
-    train_sampler = torch.utils.data.distributed.DistributedSampler(
-        dataset=train_dataset,
-        num_replicas=num_gpus,
-        rank=cfg.local_rank,
+    train_loader = DataLoader(
+        dataset=train_dset,
+        batch_size=cfg.batch_size,
         shuffle=True,
-    )
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=cfg.batch_size // num_gpus if cfg.dist else cfg.batch_size,
-        shuffle=not cfg.dist,
-        num_workers=cfg.num_workers,
-        pin_memory=True,
+        num_workers=num_workers,
         drop_last=True,
-        sampler=train_sampler if cfg.dist else None,
-        prefetch_factor=4
+        pin_memory=True,
+        persistent_workers=True,
     )
-
-    Dataset_eval = COCO_eval
-    val_dataset = Dataset_eval(cfg.data_dir, "val", test_scales=[1.0], test_flip=False)
-    val_loader = torch.utils.data.DataLoader(
-        val_dataset,
+    val_loader = DataLoader(
+        dataset=val_dset,
         batch_size=1,
         shuffle=False,
-        num_workers=cfg.num_workers,
-        pin_memory=True,
-        collate_fn=val_dataset.collate_fn,
-        prefetch_factor=4
+        num_workers=0,
     )
 
-    print("Creating model...")
-    if "hourglass" in cfg.arch:
-        model = get_hourglass[cfg.arch]
-        print(count_parameters(model))
-    else:
-        raise ValueError("Unsupported model")
-
-    model = model.to(cfg.device)
-    if cfg.dist:
-        model = nn.parallel.DistributedDataParallel(
-            model,
-            device_ids=[
-                cfg.local_rank,
-            ],
-            output_device=cfg.local_rank,
-        )
-
-    optimizer = torch.optim.Adam(model.parameters(), cfg.lr)
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer, cfg.lr_step, gamma=0.1
+    train_loader, val_loader = fabric.setup_dataloaders(
+        train_loader, val_loader, use_distributed_sampler=True
     )
 
-    def train(epoch):
-        print("\n%s Epoch: %d" % (datetime.now(), epoch))
-        model.train()
+    model = CornerNet(
+        n=cfg.n,
+        nstack=cfg.nstack,
+        dims=cast(list, cfg.dims),
+        num_modules=cast(list, cfg.num_modules),
+        num_classes=cfg.num_classes,
+    )
+    optimizer = optim.Adam(params=model.parameters(), lr=cfg.lr)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, cfg.lr_step, gamma=0.1)
 
-        tic = time.perf_counter()
-        for batch_idx, batch in enumerate(train_loader):
-            for k in batch:
-                batch[k] = batch[k].to(device=cfg.device, non_blocking=True)
+    model, optimizer = fabric.setup(model, optimizer)
 
-            outputs = model(batch["image"])
-            hmap_tl, hmap_br, embd_tl, embd_br, regs_tl, regs_br = zip(*outputs)
+    logger.info("Total parmeters: %d", count_parameters(model))
 
-            embd_tl = [_transpose_and_gather_feat(e, batch["inds_tl"]) for e in embd_tl]
-            embd_br = [_transpose_and_gather_feat(e, batch["inds_br"]) for e in embd_br]
-            regs_tl = [_transpose_and_gather_feat(r, batch["inds_tl"]) for r in regs_tl]
-            regs_br = [_transpose_and_gather_feat(r, batch["inds_br"]) for r in regs_br]
+    trainer = Trainer(
+        fabric=fabric,
+        cfg=cfg,
+        logger=logger,
+        validation_frequency=cfg.val_frequency,
+        logging_frequency=cfg.logging_frequency,
+        disable_tqdm=disable_tqdm,
+    )
 
-            focal_loss = _neg_loss(hmap_tl, batch["hmap_tl"]) + _neg_loss(
-                hmap_br, batch["hmap_br"]
-            )
-
-            reg_loss = _reg_loss(
-                regs_tl, batch["regs_tl"], batch["ind_masks"]
-            ) + _reg_loss(regs_br, batch["regs_br"], batch["ind_masks"])
-
-            pull_loss, push_loss = _embedding_loss(embd_tl, embd_br, batch["ind_masks"])
-
-            loss = focal_loss + 0.1 * pull_loss + 0.1 * push_loss + reg_loss
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            if batch_idx % cfg.log_interval == 0:
-                duration = time.perf_counter() - tic
-                tic = time.perf_counter()
-                print(
-                    "[%d/%d-%d/%d] "
-                    % (epoch, cfg.num_epochs, batch_idx, len(train_loader))
-                    + " focal_loss= %.5f pull_loss= %.5f push_loss= %.5f reg_loss= %.5f"
-                    % (
-                        focal_loss.item(),
-                        pull_loss.item(),
-                        push_loss.item(),
-                        reg_loss.item(),
-                    )
-                    + " (%d samples/sec)"
-                    % (cfg.batch_size * cfg.log_interval / duration)
-                )
-        return
-
-    def val_map(epoch):
-        print("\n%s Val@Epoch: %d" % (datetime.now(), epoch))
-        model.eval()
-
-        results = {}
-        with torch.no_grad():
-            for inputs in val_loader:
-                img_id, inputs = inputs[0]
-
-                detections = []
-                for scale in inputs:
-                    inputs[scale]["image"] = inputs[scale]["image"].to(cfg.device)
-                    output = model(inputs[scale]['image'])[-1]
-                    det = _decode(*output, ae_threshold=0.5, K=100, kernel=3)
-                    det = det.reshape(det.shape[0], -1, 8).detach().cpu().numpy()
-                    if det.shape[0] == 2:
-                        det[1, :, [0, 2]] = (
-                            inputs[scale]["fmap_size"][0, 1] - det[1, :, [2, 0]]
-                        )
-                        det = det.reshape(1, -1, 8)
-
-                    _rescale_dets(
-                        detections=det,
-                        ratios=inputs[scale]["ratio"],
-                        borders=inputs[scale]["border"],
-                        sizes=inputs[scale]["size"],
-                    )
-
-                    det[:, :, 0:4] /= scale
-                    detections.append(det)
-
-                detections = np.concatenate(detections, axis=1)[0]
-                # reject detections with negative scores
-                detections = detections[detections[:, 4] > -1]
-                classes = detections[..., -1]
-
-                results[img_id] = {}
-                for j in range(val_dataset.num_classes):
-                    keep_inds = classes == j
-                    results[img_id][j + 1] = detections[keep_inds][:, 0:7].astype(
-                        np.float32
-                    )
-                    nms.soft_nms_merge(
-                        results[img_id][j + 1], Nt=0.5, method=2, weight_exp=10
-                    )
-                    # soft_nms(results[img_id][j + 1], Nt=0.5, method=2)
-                    results[img_id][j + 1] = results[img_id][j + 1][:, 0:5]
-
-                scores = np.hstack(
-                    [
-                        results[img_id][j][:, -1]
-                        for j in range(1, val_dataset.num_classes + 1)
-                    ]
-                )
-                if len(scores) > val_dataset.max_objs:
-                    kth = len(scores) - val_dataset.max_objs
-                    thresh = np.partition(scores, kth)[kth]
-                    for j in range(1, val_dataset.num_classes + 1):
-                        keep_inds = results[img_id][j][:, -1] >= thresh
-                        results[img_id][j] = results[img_id][j][keep_inds]
-
-        eval_results = val_dataset.run_eval(results, save_dir=cfg.ckpt_dir)
-        print(eval_results)
-            
-    print("Starting training...")
-    for epoch in range(cfg.num_epochs + 1):
-        train_sampler.set_epoch(epoch)
-        train(epoch)
-        if cfg.val_interval > 0 and epoch % cfg.val_interval == 0:
-            val_map(epoch)
-        
-        print(saver.save(model.state_dict(), "checkpoint"))
-        lr_scheduler.step(epoch)
+    trainer.fit(
+        model=model,
+        optimizer=optimizer,
+        scheduler=cast(optim.lr_scheduler._LRScheduler, scheduler),
+        train_loader=train_loader,
+        val_loader=val_loader,
+    )
 
 
-class DisablePrint:
-  def __init__(self, local_rank=0):
-    self.local_rank = local_rank
+@click.command()
+@click.option("--disable-tqdm", is_flag=True)
+@click.option(
+    "--config",
+    type=click.Choice(["coco-hg-small", "coco-hg-large"]),
+    required=True,
+    help="Config type",
+)
+@click.option(
+    "--precision",
+    type=click.Choice(["32-true", "16-true", "bf16-true", "16-mixed", "bf16-mixed"]),
+    required=True,
+)
+@click.option("--data-dir", type=click.Path(exists=True), required=True)
+@click.option("--val-data-dir", type=click.Path(exists=True), required=False)
+@click.option("--eval-save-dir", type=click.Path(exists=True), required=True)
+@click.option("--seed", type=int, required=False)
+@click.option("--train-cache-rate", type=float, required=False)
+@click.option("--val-cache-rate", type=float, required=False)
+@click.option("--batch-size", type=int, required=False)
+@click.option("--lr", type=float, required=False)
+@click.option("--num-workers", type=int, required=False, default=0)
+def main(
+    disable_tqdm: bool,
+    config: str,
+    precision: str,
+    data_dir: Path,
+    val_data_dir: Optional[Path],
+    eval_save_dir: Path,
+    seed: Optional[int],
+    train_cache_rate: Optional[float],
+    val_cache_rate: Optional[float],
+    batch_size: Optional[int],
+    lr: Optional[float],
+    num_workers: int,
+):
 
-  def __enter__(self):
-    if self.local_rank != 0:
-      self._original_stdout = sys.stdout
-      sys.stdout = open(os.devnull, 'w')
+    if val_data_dir is None:
+        val_data_dir = data_dir
+
+    if config == "coco-hg-small":
+        from configs.coco_hourglass import CocoHourglassSmall
+
+        cfg = CocoHourglassSmall()
+    elif config == "coco-hg-large":
+        from configs.coco_hourglass import CocoHourglassLarge
+
+        cfg = CocoHourglassLarge()
+
     else:
-      pass
+        raise ValueError("Unrecognized args")
 
-  def __exit__(self, exc_type, exc_val, exc_tb):
-    if self.local_rank != 0:
-      sys.stdout.close()
-      sys.stdout = self._original_stdout
-    else:
-      pass
+    cfg.data_dir = Path(data_dir)
+    cfg.val_data_dir = Path(val_data_dir)
+    cfg.eval_save_dir = Path(eval_save_dir)
+    cfg.precision = precision
+
+    if seed is not None:
+        cfg.seed = seed
+    if train_cache_rate is not None:
+        cfg.train_cache_rate = train_cache_rate
+    if val_cache_rate is not None:
+        cfg.val_cache_rate = val_cache_rate
+    if batch_size is not None:
+        cfg.batch_size = batch_size
+    if lr is not None:
+        cfg.lr = lr
+
+    fabric = Fabric(
+        accelerator="cuda",
+        strategy="auto",
+        devices=1,
+        precision=cfg.precision,
+    )
+
+    fabric.launch(train, cfg, disable_tqdm, num_workers)  # type: ignore
 
 
-if __name__ == '__main__':
-    import cv2
-    cv2.setNumThreads(0)
-    with DisablePrint(local_rank=cfg.local_rank):
-        main()
+if __name__ == "__main__":
+    main()
