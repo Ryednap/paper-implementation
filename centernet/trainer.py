@@ -8,7 +8,6 @@ from typing import Any, Dict, Iterable, Literal, Optional, cast
 
 from utils import count_parameters, human_format
 
-
 INT_MAX = 2147483647
 
 

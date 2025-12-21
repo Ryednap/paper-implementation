@@ -53,7 +53,7 @@ def transpose_and_gather_feat(feat: torch.Tensor, ind: torch.Tensor):
             (in H x W) which used to gather feat.
     """
     feat = feat.permute(0, 2, 3, 1).contiguous()  # [B, C, H, W] -> [B, H, W, C]
-    feat = feat.view(feat.size(0), -1, feat.size(3))  # [B, H, W, C] -> [B, 1, C]
+    feat = feat.view(feat.size(0), -1, feat.size(3))  # [B, H, W, C] -> [B, H * W, C]
 
     # [B, num_obj] -> [B, num_obj, C]
     # torch.gather is fine if the dim to gather along is differnt

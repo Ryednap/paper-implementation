@@ -20,6 +20,49 @@ def decode_dets(
     ae_threshold: float,
     num_dets: int = 1000,
 ):
+    """
+    Decode Centernet-style predictions into candidate bounding boxes.
+
+    The function:
+    1) Applies sigmoid + local NMS on corner/center heatmaps.
+    2) Extracts `top K` peaks from TL, BR, and CT heatmaps.
+    3) Forms all `K * K` TL-BR box pairs (class-consistent only).
+    4) Refines peak locations with per-peak sub-pixel offsets (regs).
+    5) Filters TL-BR pairs using associative embedding distance and box validity.
+    6) Selects the top `num_dets` scoring boxes per image.
+
+    Args:
+        tl_hmap: Top-left corner heatmap logits of shape `[B, C, H, W]`
+        br_hmap: Bottom-right corner heatmap logits of shape `[B, C, H, W]`.
+        ct_hmap: Center heatmap logits of shape `[B, C, H, W]`.
+        tl_regs: TL offset regression of shape `[B, 2, H, W]` (x/y offsets).
+        br_regs: BR offset regression of shape `[B, 2, H, W]` (x/y offsets).
+        ct_regs: Center offset regression of shape `[B, 2, H, W]` (x/y offsets).
+        tl_embd: TL associative embedding map of shape `[B, 1, H, W]` or `[B, D, H, W]`
+            (this implementation assumes it can be reduced/gathered to `[B, K, 1]`.
+        br_embd: BR associative embedding map of shape `[B, 1, H, W]` or `[B, D, H, W]`
+            (same assumption as `tl_embd`).
+        topk_K: Number of top peaks to take from each heatmap (per image).
+        nms_kernel: Odd kernel size for heatmap NMS (e.g., 3 or 5).
+        ae_threshold: Max allowed absolute distance between matched TL/BR embeddings.
+            Pairs with |e_{tl} - e_{br}| > {ae_threshold} are rejected.
+        num_dets: Number of final box detections to return per image (after filtering).
+
+    Returns:
+        A dict with:
+            bboxes: `[B, num_dets, 4]` boxes in feature-map coordinates
+            classes: `[B, num_dets, 1]` integer class ids for each box.
+            scores: `[B, num_dets, 1]` box scores computed as the mean of matched
+            tl_scores: `[B, num_dets, 1]` TL corner peak scores for selected boxes.
+            br_scores: `[B, num_dets, 1]` BR corner peak scores for selected boxes.
+            centers: `[B, K, 4])` center candidates as `(x, y, class, score)` from `ct_hmap`,
+                with offsets applied using `ct_regs`. (Not used to filter boxes in this function.)
+
+    Notes:
+        - Coordinates are in the heatmap/output stride space; converting to input-image pixels
+          requires multiplying by the model output stride and applying any resizing/letterboxing
+          inverse transforms.
+    """
     B, C, H, W = tl_hmap.shape
 
     tl_hmap = torch.sigmoid(tl_hmap)
@@ -50,6 +93,8 @@ def decode_dets(
     tl_regs = tl_regs.view(B, topk_K, 1, 2)
     br_regs = br_regs.view(B, 1, topk_K, 2)
 
+    # TODO: This is hell wrong broadcasting will make this addition O(n * K * K)
+    # This should be done before expanding.
     tl_xs = tl_xs + tl_regs[..., 0]
     tl_ys = tl_ys + tl_regs[..., 1]
     br_xs = br_xs + br_regs[..., 0]
@@ -100,7 +145,7 @@ def decode_dets(
     # since at this point tl_classes and br_classes are same
     # we can use either of them to represent actual classes.
     tl_classes = tl_classes.contiguous().view(B, -1, 1)  # [B, K * K, 1]
-    classes = gather_feat(tl_classes, inds)  # [B, num_dets, 1]
+    classes = gather_feat(tl_classes, inds).float()  # [B, num_dets, 1]
 
     tl_scores = tl_scores.contiguous().view(B, -1, 1)  # [B, K * K, 1]
     br_scores = br_scores.contiguous().view(B, -1, 1)  # [B, K * K, 1]
@@ -155,18 +200,17 @@ def rescale_dets(
 
     # center scaling
     centers[..., 0] /= ratios[:, 1][:, None]
-    centers[..., 0] /= ratios[:, 0][:, None]
+    centers[..., 1] /= ratios[:, 0][:, None]
     centers[..., 0] -= borders[:, 2][:, None]
     centers[..., 1] -= borders[:, 0][:, None]
 
     centers[..., 0] = centers[..., 0].clamp(min=0.0).clamp(max=original_size[:, 1])
     centers[..., 1] = centers[..., 1].clamp(min=0.0).clamp(max=original_size[:, 0])
 
-    out = bboxes.clone()
-    out[..., 0:4:2] = xs
-    out[..., 1:4:2] = ys
+    bboxes[..., 0:4:2] = xs
+    bboxes[..., 1:4:2] = ys
 
-    return out, scores, centers
+    return bboxes, scores, centers
 
 
 @torch.compile()

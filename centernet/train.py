@@ -31,11 +31,11 @@ def _get_logger(is_rank_zero: bool, log_path: Optional[str]):
         return loguru.logger
 
     fmt = "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}"
-    loguru.logger.add(sys.stderr, level="INFO", format=fmt)
+    loguru.logger.add(sys.stderr, level="DEBUG", format=fmt)
 
     if log_path:
         p = os.path.join(log_path, "train_{time:YYYY-MM-DD_HH-mm-ss}.log")
-        loguru.logger.add(p, level="INFO", format=fmt, enqueue=True)
+        loguru.logger.add(p, level="DEBUG", format=fmt, enqueue=True)
 
     return loguru.logger
 
@@ -64,8 +64,8 @@ def train(
         persistent_workers=True,
     )
     val_loader = DataLoader(val_dset, batch_size=1, shuffle=False)
-    model = CenterNet(cfg=cfg)
     logger = _get_logger(fabric.is_global_zero, log_path)
+    model = CenterNet(cfg=cfg, logger=logger)
     trainer = Trainer(
         fabric=fabric,
         logger=logger,

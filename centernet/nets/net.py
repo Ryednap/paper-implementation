@@ -24,6 +24,7 @@ from kp_utils import (
     center_match,
     convert_to_coco_eval_format,
 )
+from debugger import tdebug
 
 
 class CocoValidatorCallback:
@@ -93,12 +94,15 @@ class CocoValidatorCallback:
 
 
 class CenterNet(L.LightningModule):
-    def __init__(self, cfg: Config, wandb: Optional[Run] = None):
+    def __init__(
+        self, cfg: Config, logger: "loguru.Logger", wandb: Optional[Run] = None
+    ):
         super().__init__()
 
         self.cfg = cfg
         self.wandb = wandb
         self.logging_frequency = self.cfg.logging_frequency
+        self.my_logger = logger
         self.model = CenterNetHourglass(
             n=cfg.n,
             num_classes=cfg.num_classes,
@@ -148,6 +152,7 @@ class CenterNet(L.LightningModule):
                 ae_threshold=self.cfg.ae_threshold,
                 num_dets=self.cfg.num_dets,
             )
+            # self.my_logger.opt(lazy=True).debug("Det debug:\n{dbg}", dbg=lambda: tdebug(dets))
             bboxes, scores, centers = rescale_dets(
                 bboxes=dets["bboxes"],
                 scores=dets["scores"],
@@ -182,7 +187,7 @@ class CenterNet(L.LightningModule):
         r = {}
         for j in range(self.cfg.num_classes):
             keep_inds = all_classes == j
-            r[j + 1] = all_detections[keep_inds].astype(np.float32)
+            r[j + 1] = all_detections[keep_inds][:, 0:7].astype(np.float32)
             soft_nms_merge(
                 r[j + 1],
                 Nt=self.cfg.nms_threshold,
