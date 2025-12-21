@@ -1,0 +1,34 @@
+seed = 317
+
+# data prep settings
+use_gaussian = true
+gaussian_iou = 0.3
+down_ratio = 4
+max_objs = 128
+num_classes = 80
+num_dets = 1000
+test_scales = [1.0]
+topk_k = 100
+nms_threshold = 0.5
+ae_threshold = 0.5
+val_cache_rate = 1.0
+nms_gaussian_w_exp = 10
+
+# training settings
+precision = "32-true"
+train_patch_size = [511, 511]
+batch_size = 48
+lr = 0.00025
+lr_step = [45, 60]
+val_frequency = 5
+logging_frequency = 100
+ckpt_frequency = 5
+max_epochs = 70
+
+# Model settings
+n = 5
+nstack = 1
+conv_dim = 256
+dims = [256, 256, 384, 384, 384, 512]
+num_modules = [2, 2, 2, 2, 2, 4]
+deep_supervision = true
