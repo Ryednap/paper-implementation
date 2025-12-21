@@ -15,15 +15,6 @@ from nets.net import CenterNet, CocoValidatorCallback
 from trainer import Trainer, INT_MAX
 
 
-def initialize_os_environ():
-    os.environ["OMP_NUM_THREADS"] = "1"
-    os.environ["MKL_NUM_THREADS"] = "1"
-    os.environ["OPENBLAS_NUM_THREADS"] = "1"
-    os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-    os.environ["NUMEXPR_NUM_THREADS"] = "1"
-    os.environ["TORCH_DISTRIBUTED_BACKEND"] = "nccl"
-
-
 def _get_logger(is_rank_zero: bool, log_path: Optional[str]):
     loguru.logger.remove()
 
@@ -50,7 +41,6 @@ def train(
     log_path: Optional[str],
 ):
     set_seed(cfg.seed)
-    initialize_os_environ()
     train_dset = CocoTrainDataset(cfg=cfg)
     val_dset = CocoValDataset(cfg=cfg, device=fabric.device)
 

@@ -85,10 +85,9 @@ class CocoValidatorCallback:
             self._best_validation,
         )
         if current > self._best_validation:
-            save_path = os.path.join(
-                self.cfg.ckpt_dir, "models", f"best_{self._best_validation}.ckpt"
-            )
-            os.makedirs(save_path, exist_ok=True)
+            save_dir = os.path.join(self.cfg.ckpt_dir, "models")
+            save_path = os.path.join(save_dir, f"best_{self._best_validation}.ckpt")
+            os.makedirs(save_dir, exist_ok=True)
             self.fabric.save(save_path, model.state_dict())
             self.logger.info("Epoch {} Saved Best Model at {}", epoch, save_path)
 

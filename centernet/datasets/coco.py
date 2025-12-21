@@ -185,11 +185,11 @@ class CocoTrainDataset(Dataset):
             else:
                 tl_hmap[label, itly, itlx] = 1
                 br_hmap[label, ibry, ibrx] = 1
-                ct_hmap[label, ictx, ictx] = 1
+                ct_hmap[label, ictx, icty] = 1
 
             tl_inds[i] = itly * fmap_width + itlx
-            br_inds[i] = ibry * fmap_width + itlx
-            ct_inds[i] = icty * fmap_width + itlx
+            br_inds[i] = ibry * fmap_width + ibrx
+            ct_inds[i] = icty * fmap_width + ictx
 
         return {
             "tl_hmap": tl_hmap,

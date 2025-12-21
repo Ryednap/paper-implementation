@@ -204,8 +204,8 @@ def rescale_dets(
     centers[..., 0] -= borders[:, 2][:, None]
     centers[..., 1] -= borders[:, 0][:, None]
 
-    centers[..., 0] = centers[..., 0].clamp(min=0.0).clamp(max=original_size[:, 1])
-    centers[..., 1] = centers[..., 1].clamp(min=0.0).clamp(max=original_size[:, 0])
+    centers[..., 0] = centers[..., 0].clamp(min=0.0).clamp(max=original_size[:, 1][:, None])
+    centers[..., 1] = centers[..., 1].clamp(min=0.0).clamp(max=original_size[:, 0][:, None])
 
     bboxes[..., 0:4:2] = xs
     bboxes[..., 1:4:2] = ys
