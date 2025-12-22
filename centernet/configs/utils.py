@@ -60,7 +60,7 @@ def add_click_overides(
         for name in reversed(overridables):
             # always assumed to be in pydantic v2
             anno = model.model_fields[name].annotation
-            opt = f"--{name.replace("_", "-")}"
+            opt = f"--{name.replace('_', '-')}"
             kwargs = {
                 "required": False,
                 "default": None,

@@ -155,13 +155,22 @@ class Trainer:
                     for k, v in loss_dict.items()
                 )
 
-                self.logger.info(
-                    "Epoch {}/{} Iteration {} | {}",
-                    self._current_epoch,
-                    self.max_epochs,
-                    self._current_steps,
-                    loss_str,
-                )
+                if self.max_epochs:
+                    self.logger.info(
+                        "Epoch {}/{} Iteration {} | {}",
+                        self._current_epoch,
+                        self.max_epochs,
+                        self._current_steps,
+                        loss_str,
+                    )
+                else:
+                    self.logger.info(
+                        "Iteration {}/{} | {}",
+                        self._current_steps,
+                        self.max_steps,
+                        self._current_steps,
+                        loss_str,
+                    )
 
             self._current_steps += 1
 
