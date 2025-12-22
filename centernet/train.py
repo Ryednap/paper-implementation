@@ -99,7 +99,7 @@ def main(
 
     merged = {**toml_cfg, **overrides}
     cfg = Config.model_validate(merged)
-
+    print(cfg)
     fabric = L.Fabric(
         accelerator="cuda",
         strategy="auto",
