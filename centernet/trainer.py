@@ -168,7 +168,6 @@ class Trainer:
                         "Iteration {}/{} | {}",
                         self._current_steps,
                         self.max_steps,
-                        self._current_steps,
                         loss_str,
                     )
 
