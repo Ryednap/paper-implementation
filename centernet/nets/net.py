@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os
-from typing import Optional, cast, override
+from typing import Optional, cast
 import lightning as L
 import loguru
 import numpy as np
@@ -210,7 +210,6 @@ class CenterNet(L.LightningModule):
 
         return image_id, r
 
-    @override
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.cfg.lr)
         scheduler = torch.optim.lr_scheduler.StepLR(
