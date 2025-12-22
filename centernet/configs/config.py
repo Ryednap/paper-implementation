@@ -30,12 +30,14 @@ class Config(BaseModel, extra="allow"):
     precision: _PRECISION
     train_patch_size: Tuple[int, int]
     batch_size: int
+    max_steps: int
     lr: float
-    lr_step: Tuple[int, ...]
+    lr_step_size: int
+    lr_gamma: float
     val_frequency: int
     logging_frequency: int
     ckpt_frequency: int
-    max_epochs: int
+
 
     # Model settings
     n: int
@@ -53,7 +55,7 @@ OVERRIDABLES = [
     "ckpt_dir",
     "batch_size",
     "lr",
-    "max_epochs",
+    "max_steps",
     "precision",
     "val_cache_rate",
 ]

@@ -4,6 +4,7 @@ import torch
 from utils import heatmap_nms, transpose_and_gather_feat, gather_feat, topk
 
 from datasets._coco_constants import COCO_IDS
+from debugger import tdebug
 
 
 def decode_dets(
@@ -172,6 +173,29 @@ def rescale_dets(
     borders: torch.Tensor,
     original_size: torch.Tensor,
 ):
+    """
+    Map detections from network/preprocessed image coordinates back to original image space.
+
+    Does:
+    - Undo resize scaling using `ratios` and undo padding/crop offset using `borders`.
+    - Marks detections as invalid by setting `scores = -1` if the box is far out-of-bounds
+      (threshold: 5 px beyond image boundary; CenterNet heuristic).
+    - Clips boxes and centers to `[0, W]` / `[0, H]` of the original image.
+
+    Expects:
+    - bboxes: Tensor of shape (B, N, 4) in (x1, y1, x2, y2) for the *preprocessed* image space.
+    - scores: Tensor of shape (B, N, C) (or any trailing shape) corresponding to each detection.
+      (Modified in-place for out-of-bounds detections.)
+    - centers: Tensor of shape (B, N, 2) in (x, y) for the *preprocessed* image space.
+    - ratios: Tensor of shape (B, 2) as (h_ratio, w_ratio) used during preprocessing resize.
+    - borders: Tensor of shape (B, 4); uses `borders[:, 0]` as top and `borders[:, 2]` as left offset.
+    - original_size: Tensor of shape (B, 2) as (H, W) of the original image.
+
+    Returns:
+    - bboxes: (B, N, 4) rescaled/clipped to original image coordinates.
+    - scores: scores with out-of-bounds detections filled with -1.
+    - centers: (B, N, 2) rescaled/clipped to original image coordinates.
+    """
     xs, ys = bboxes[..., 0:4:2], bboxes[..., 1:4:2]
     xs /= ratios[:, 1][:, None, None]
     ys /= ratios[:, 0][:, None, None]
@@ -188,10 +212,8 @@ def rescale_dets(
     ty_inds = ys[:, :, 0] <= -5
     by_inds = ys[:, :, 1] >= original_size[:, 0] + 5
 
-    scores[:, tx_inds[0, :]] = -1
-    scores[:, bx_inds[0, :]] = -1
-    scores[:, ty_inds[0, :]] = -1
-    scores[:, by_inds[0, :]] = -1
+    oob = tx_inds | bx_inds | ty_inds | by_inds
+    scores.masked_fill_(oob[:, :, None], -1)
 
     ## Now we have the xs and ys in original image space
 
@@ -204,8 +226,16 @@ def rescale_dets(
     centers[..., 0] -= borders[:, 2][:, None]
     centers[..., 1] -= borders[:, 0][:, None]
 
-    centers[..., 0] = centers[..., 0].clamp(min=0.0).clamp(max=original_size[:, 1][:, None])
-    centers[..., 1] = centers[..., 1].clamp(min=0.0).clamp(max=original_size[:, 0][:, None])
+    # print(tdebug(centers[..., 0], name="x center before"))
+    # print(tdebug(centers[..., 1], name="y center before"))
+    centers[..., 0] = (
+        centers[..., 0].clamp(min=0.0).clamp(max=original_size[:, 1][:, None])
+    )
+    centers[..., 1] = (
+        centers[..., 1].clamp(min=0.0).clamp(max=original_size[:, 0][:, None])
+    )
+    # print(tdebug(centers[..., 0], name="x center after"))
+    # print(tdebug(centers[..., 1], name="y center after"))
 
     bboxes[..., 0:4:2] = xs
     bboxes[..., 1:4:2] = ys
@@ -233,6 +263,25 @@ def _get_center_region(tlx, tly, brx, bry, n):
 
 
 def _do_center_match(dets: torch.Tensor, centers: torch.Tensor, n: int):
+    """
+    Refine/filter box detections by requiring a matching center-point detection.
+
+    Does:
+    - For each box, builds a "center region" (a shrunk box window) via `_get_center_region(..., n)`.
+    - Finds center candidates whose (x, y) fall inside that region AND have the same class.
+    - If a match exists, updates the box score by fusing with the matched center score:
+      score <- (2 * box_score + center_score) / 3.
+    - If no matching center exists, marks the detection invalid by setting score to -1.
+
+    Expects:
+    - dets: Tensor (N, D) where columns are [x1, y1, x2, y2, score, ..., cls] and `cls` is last.
+      (This function reads dets[:, 0:4], dets[:, 4], dets[:, -1] and writes dets[:, 4].)
+    - centers: Tensor (K, 4) as [cx, cy, cls, center_score].
+    - n: int controlling how tight the "center region" is (See centernet paper).
+
+    Returns:
+    - dets: same tensor with updated scores; unmatched boxes have score = -1.
+    """
 
     ctlx, ctly, cbrx, cbry = _get_center_region(
         tlx=dets[:, 0], tly=dets[:, 1], brx=dets[:, 2], bry=dets[:, 3], n=n
@@ -269,6 +318,23 @@ def _do_center_match(dets: torch.Tensor, centers: torch.Tensor, n: int):
 
 
 def center_match(detections: torch.Tensor, centers: torch.Tensor):
+    """
+    Apply CenterNet-style center-matching to box detections and return sorted valid outputs.
+
+    Does:
+    - Filters out invalid detections where score <= -1.
+    - Splits detections into small vs large by area threshold 22500 (150 x 150 Centernet Heuristic)
+    - Runs `_do_center_match` with different `n` for small vs large boxes (3 and 5).
+    - Concatenates results, sorts by descending score, and returns classes.
+
+    Expects:
+    - detections: Tensor (N, D) with [x1, y1, x2, y2, score, ..., cls] where `cls` is last.
+    - centers: Tensor (K, 4) as [cx, cy, cls, center_score].
+
+    Returns:
+    - detections: Tensor (N', D) center-matched, sorted by score (unmatched ones have score = -1).
+    - clses: Tensor (N',) classes extracted as detections[:, -1].
+    """
     valid_inds = detections[:, 4] > -1
     valid_detections = detections[valid_inds]
 

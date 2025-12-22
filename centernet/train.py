@@ -60,7 +60,7 @@ def train(
         fabric=fabric,
         logger=logger,
         ckpt_dir=cfg.ckpt_dir,
-        max_epochs=cfg.max_epochs,
+        max_steps=cfg.max_steps,
         validation_frequency=cfg.val_frequency,
         logging_frequency=cfg.logging_frequency,
         ckpt_frequency=cfg.ckpt_frequency,

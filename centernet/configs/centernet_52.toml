@@ -29,7 +29,7 @@ gamma = 0.1
 
 # Model settings
 n = 5
-nstack = 2
+nstack = 1
 conv_dim = 256
 dims = [256, 256, 384, 384, 384, 512]
 num_modules = [2, 2, 2, 2, 2, 4]

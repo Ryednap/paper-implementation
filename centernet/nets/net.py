@@ -213,14 +213,16 @@ class CenterNet(L.LightningModule):
     @override
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.cfg.lr)
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer=optimizer, milestones=self.cfg.lr_step, gamma=0.1
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer=optimizer,
+            step_size=self.cfg.lr_step_size,
+            gamma=self.cfg.lr_gamma,
         )
         return OptimizerLRSchedulerConfig(
             optimizer=optimizer,
             lr_scheduler=LRSchedulerConfigType(
                 scheduler=scheduler,
-                interval="epoch",
+                interval="step",
                 frequency=1,
             ),
         )
