@@ -1,0 +1,2 @@
+2025-12-22 18:11:15 | INFO     | Total Model Parameters: 210M
+2025-12-22 18:12:05 | INFO     | Epoch 0/None Iteration 0 | loss=1172.11401 focal_loss=1170.67603 reg_loss=1.24979 pull_loss=0.08679 push_loss=1.79525
